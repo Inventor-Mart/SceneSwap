@@ -26,6 +26,8 @@ import {
   Send,
   Loader2,
   ExternalLink,
+  Smartphone,
+  Download,
 } from 'lucide-react';
 
 import {
@@ -726,6 +728,19 @@ export default function App() {
             >
               <Mail className="h-3.5 w-3.5" />
             </button>
+
+            {/* Direct Android APK Download Button */}
+            <a
+              href="https://github.com/Inventor-Mart/SceneSwap/releases/download/v1.0.0-apk/SceneSwap-Android7plus-v1.0.apk"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Download SceneSwap APK for Android (Android 7.0+)"
+              className="flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition-all shadow-sm"
+            >
+              <Smartphone className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Android APK</span>
+              <Download className="h-3 w-3 opacity-75" />
+            </a>
 
             {/* PWA Install Button */}
             <PWAInstallButton />
