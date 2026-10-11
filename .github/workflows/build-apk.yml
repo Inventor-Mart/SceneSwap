@@ -29,9 +29,6 @@ jobs:
           distribution: 'temurin'
           java-version: 17
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install NPM Dependencies
         run: npm install --legacy-peer-deps
 
@@ -48,6 +45,8 @@ jobs:
         run: |
           cd android
           ./gradlew assembleDebug --stacktrace
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
 
       - name: Prepare APK Output
         run: |
