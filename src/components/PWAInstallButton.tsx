@@ -76,7 +76,7 @@ export const PWAInstallButton: React.FC = () => {
         <button
           type="button"
           onClick={handleInstallClick}
-          title="Install AlterEgo.RPG as Progressive Web App"
+          title="Install SceneSwap as Progressive Web App"
           className="flex items-center gap-1.5 rounded-full border border-amber-400/50 bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-purple-500/20 px-3 py-1 text-xs font-bold text-amber-200 hover:border-amber-400 hover:text-white hover:bg-amber-500/30 transition shadow-sm cursor-pointer"
         >
           <Download className="h-3.5 w-3.5 text-amber-300 animate-bounce" />
@@ -86,7 +86,7 @@ export const PWAInstallButton: React.FC = () => {
         <button
           type="button"
           onClick={() => setShowGuide(true)}
-          title="Install AlterEgo.RPG on your device or get PWA instructions"
+          title="Install SceneSwap on your device or get PWA instructions"
           className="flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-xs font-semibold text-amber-200 hover:border-amber-400 hover:bg-amber-400/20 transition cursor-pointer"
         >
           {isIOS ? (
@@ -102,15 +102,15 @@ export const PWAInstallButton: React.FC = () => {
       {showGuide && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
           <div className="w-full max-w-md rounded-3xl border border-amber-400/50 bg-gradient-to-b from-slate-950 via-[#130726] to-black p-5 shadow-[0_0_40px_rgba(245,158,11,0.3)] text-white">
-            <div className="flex items-center justify-between border-b border-amber-400/20 pb-3">
+            <div className="flex items-center justify-between border-amber-400/20 pb-3 border-b">
               <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/30">
                   <Sparkles className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-white">AlterEgo.RPG Installation</h3>
+                  <h3 className="text-sm font-extrabold text-white">SceneSwap Installation</h3>
                   <p className="text-[10px] text-amber-300/80 font-mono">
-                    Pathfinder • Home Screen, Dock or Desktop
+                    Party Script Engine • Home Screen, Dock or Desktop
                   </p>
                 </div>
               </div>
@@ -134,7 +134,7 @@ export const PWAInstallButton: React.FC = () => {
                   All web browsers (Chrome, Safari, Edge) <strong>strictly block</strong> PWA installation prompts inside embedded preview frames.
                 </p>
                 <div className="mt-2 rounded-xl bg-black/40 border border-amber-400/20 p-2 text-[11px] text-amber-200">
-                  💡 <strong>To test or install right now:</strong> Look at the top bar of this AI Studio preview pane and click the <strong>&ldquo;Pop out&rdquo; / &ldquo;Open in new window&rdquo;</strong> icon (external link icon). In that standalone tab, your browser will immediately enable the <strong>&ldquo;Install AlterEgo&rdquo;</strong> prompt!
+                  💡 <strong>To test or install right now:</strong> Look at the top bar of this AI Studio preview pane and click the <strong>&ldquo;Pop out&rdquo; / &ldquo;Open in new window&rdquo;</strong> icon (external link icon). In that standalone tab, your browser will immediately enable the <strong>&ldquo;Install SceneSwap&rdquo;</strong> prompt!
                 </div>
               </div>
             )}

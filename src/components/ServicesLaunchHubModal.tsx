@@ -359,7 +359,7 @@ export function ServicesLaunchHubModal({
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-300 leading-relaxed">
-                  AlterEgo Sovereign Pass is priced at <strong className="text-white">₦7,500</strong> (NGN) or <strong className="text-white">$9.99</strong> (USD). Operatives can pay via Card, Bank Transfer, USSD, or QR.
+                  SceneSwap VIP Director Pass is priced at <strong className="text-white">₦7,500</strong> (NGN) or <strong className="text-white">$9.99</strong> (USD). Directors can pay via Card, Bank Transfer, USSD, or QR.
                 </p>
               </div>
 

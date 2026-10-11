@@ -2,7 +2,7 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "User account profile and subscription state",
+      "description": "User account profile and VIP Director Pass subscription state",
       "type": "object",
       "properties": {
         "uid": {
@@ -15,11 +15,11 @@
         },
         "display_name": {
           "type": "string",
-          "description": "Display name or spiritual moniker"
+          "description": "Party director or player display name"
         },
-        "is_sovereign_pro": {
+        "is_director_pro": {
           "type": "boolean",
-          "description": "Whether user has unlocked Sovereign Pass"
+          "description": "Whether user has unlocked SceneSwap VIP Director Pass"
         },
         "created_at": {
           "type": "string",
@@ -32,46 +32,34 @@
       },
       "required": ["uid", "email"]
     },
-    "AlterEgoCharacter": {
-      "title": "AlterEgoCharacter",
-      "description": "AlterEgo persona blueprint, chapter progress, quests, and XP",
+    "SceneSwapSession": {
+      "title": "SceneSwapSession",
+      "description": "Active SceneSwap party session, cast roster, current act, and custom photo settings",
       "type": "object",
       "properties": {
         "user_id": {
           "type": "string",
           "description": "Owner Firebase UID"
         },
-        "full_name": {
+        "title": {
           "type": "string",
-          "description": "Character or user real name"
+          "description": "Current screenplay title"
         },
-        "current_profession": {
+        "genre": {
           "type": "string",
-          "description": "Current real-world career or craft"
+          "description": "Selected screenplay genre"
         },
-        "decoded_purpose": {
+        "premise": {
           "type": "string",
-          "description": "AI-decoded purpose blueprint"
+          "description": "Optional custom premise or inside joke"
         },
-        "rpg_class": {
-          "type": "string",
-          "description": "Spiritual RPG class title"
-        },
-        "current_chapter": {
+        "chapter_number": {
           "type": "number",
-          "description": "Current chapter progression (1 to 4)"
+          "description": "Current act progression (1 to 3)"
         },
-        "chapter_started_at": {
-          "type": "number",
-          "description": "Unix timestamp in ms when the current chapter started"
-        },
-        "prior_chapters_xp": {
-          "type": "number",
-          "description": "Accumulated base XP from prior chapters"
-        },
-        "is_sovereign_pro": {
+        "is_finale": {
           "type": "boolean",
-          "description": "Active Sovereign Pass status"
+          "description": "Whether current act is the grand finale"
         },
         "created_at": {
           "type": "string",
@@ -83,6 +71,38 @@
         }
       },
       "required": ["user_id"]
+    },
+    "SceneSwapSavedScript": {
+      "title": "SceneSwapSavedScript",
+      "description": "Saved screenplay act or completed movie production",
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Owner Firebase UID"
+        },
+        "script_id": {
+          "type": "string",
+          "description": "Unique script identifier"
+        },
+        "title": {
+          "type": "string",
+          "description": "Screenplay title"
+        },
+        "genre": {
+          "type": "string",
+          "description": "Screenplay genre"
+        },
+        "total_acts": {
+          "type": "number",
+          "description": "Total acts completed"
+        },
+        "created_at": {
+          "type": "string",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["user_id", "title"]
     }
   },
   "firestore": {
@@ -90,9 +110,13 @@
       "schema": "UserProfile",
       "description": "Top-level user profile keyed by Firebase Auth UID"
     },
-    "/users/{userId}/alterego/character": {
-      "schema": "AlterEgoCharacter",
-      "description": "User AlterEgo character dossier, quests, and chapter state"
+    "/users/{userId}/sceneswap/session": {
+      "schema": "SceneSwapSession",
+      "description": "Active SceneSwap party session and cast roster"
+    },
+    "/users/{userId}/scripts/{scriptId}": {
+      "schema": "SceneSwapSavedScript",
+      "description": "Saved screenplay productions archived by the user"
     }
   }
 }

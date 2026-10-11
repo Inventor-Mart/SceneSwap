@@ -108,10 +108,10 @@ export function AuthModal({
           throw new Error('Password must be at least 6 characters.');
         }
         await createUserWithEmailAndPassword(auth, email.trim(), password);
-        setSuccessMessage('Account created! Your AlterEgo character will now sync to the cloud.');
+        setSuccessMessage('Account created! Your SceneSwap party sessions will now sync to the cloud.');
       } else {
         await signInWithEmailAndPassword(auth, email.trim(), password);
-        setSuccessMessage('Signed in successfully! Loading cloud character data...');
+        setSuccessMessage('Signed in successfully! Loading SceneSwap party data...');
       }
       setTimeout(() => {
         setSuccessMessage(null);
@@ -167,10 +167,10 @@ export function AuthModal({
           </div>
           <div>
             <h3 className="text-base font-bold text-white tracking-wide">
-              {currentUser ? 'Cloud Account & Sync' : 'AlterEgo Cloud Account'}
+              {currentUser ? 'Cloud Account & Sync' : 'SceneSwap Cloud Account'}
             </h3>
             <p className="text-[11px] text-slate-400">
-              {currentUser ? 'Firebase Firestore Connected' : 'Sync character progress across all devices'}
+              {currentUser ? 'Firebase Firestore Connected' : 'Sync party scripts and custom avatars across devices'}
             </p>
           </div>
         </div>

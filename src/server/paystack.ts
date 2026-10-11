@@ -1,5 +1,5 @@
 /**
- * Paystack Integration Helper for AlterEgo Sovereign Pass
+ * Paystack Integration Helper for SceneSwap VIP Director Pass
  * Supports inline/popup modal, standard checkout, webhooks, and verification.
  */
 
@@ -75,7 +75,7 @@ export interface PaystackVerifyResponse {
  */
 export async function initializePaystackTransaction(params: PaystackInitParams): Promise<PaystackInitResponse> {
   const secretKey = params.secretKey || runtimePaystackSecretKey || process.env.PAYSTACK_SECRET_KEY;
-  const reference = params.reference || `ALTEREGO_${Date.now()}_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+  const reference = params.reference || `SCENESWAP_${Date.now()}_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
   // If no secret key provided yet, return simulated response for instant developer preview mode
   if (!secretKey) {

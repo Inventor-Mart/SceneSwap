@@ -7,10 +7,10 @@ import { registerSW } from 'virtual:pwa-register';
 registerSW({
   immediate: true,
   onNeedRefresh() {
-    console.log('AlterEgo update available.');
+    console.log('SceneSwap update available.');
   },
   onOfflineReady() {
-    console.log('AlterEgo is ready for offline use.');
+    console.log('SceneSwap is ready for offline use.');
   },
 });
 

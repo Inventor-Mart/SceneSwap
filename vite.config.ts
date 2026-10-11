@@ -4,7 +4,7 @@ import express from 'express';
 import path from 'path';
 import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
-import { generateAlterEgo, generateSceneSwap, generateSceneSwapChapter, generateChapterQuests, generateTaskCopilot, generateSceneSwapRealisticImage } from './src/server/gemini.ts';
+import { generateSceneSwap, generateSceneSwapChapter, generateSceneSwapRealisticImage } from './src/server/gemini.ts';
 import { sendSupportEmail, sendReceiptEmail, sendTestEmail, getResendStatus, setRuntimeResendApiKey } from './src/server/email.ts';
 import { initializePaystackTransaction, verifyPaystackTransaction, getPaystackStatus, setRuntimePaystackKeys } from './src/server/paystack.ts';
 
@@ -15,33 +15,6 @@ function apiServerPlugin(): Plugin {
       const app = express();
       app.use(express.json());
       app.use(express.static(path.resolve(__dirname, 'public')));
-
-      app.post('/api/alterego', async (req, res) => {
-        try {
-          const result = await generateAlterEgo(req.body || {});
-          res.json(result);
-        } catch (err: any) {
-          res.status(500).json({ error: err?.message || 'Server error' });
-        }
-      });
-
-      app.post('/api/alterego/chapter', async (req, res) => {
-        try {
-          const result = await generateChapterQuests(req.body || {});
-          res.json(result);
-        } catch (err: any) {
-          res.status(500).json({ error: err?.message || 'Server error' });
-        }
-      });
-
-      app.post('/api/alterego/task-copilot', async (req, res) => {
-        try {
-          const result = await generateTaskCopilot(req.body || {});
-          res.json(result);
-        } catch (err: any) {
-          res.status(500).json({ error: err?.message || 'Server error' });
-        }
-      });
 
       app.post('/api/sceneswap', async (req, res) => {
         try {
@@ -172,9 +145,9 @@ export default defineConfig(() => {
         includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'pwa-icon.svg'],
         manifest: {
           id: '/',
-          name: 'AlterEgo.RPG',
-          short_name: 'AlterEgo.RPG',
-          description: 'Decode your divine Ikigai purpose with AlterEgo.RPG Pathfinder — your biblical archetype and RPG purpose ascension.',
+          name: 'SceneSwap',
+          short_name: 'SceneSwap',
+          description: 'Turn any hangout into an interactive film set where friends star in personalized, branching scripts with teleprompter navigation and choice voting.',
           theme_color: '#0b0416',
           background_color: '#0b0416',
           display: 'standalone',

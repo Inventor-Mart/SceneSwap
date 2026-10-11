@@ -1,18 +1,28 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Default Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
     // Connectivity test probe
     match /test/{docId} {
       allow read: if true;
       allow write: if false;
     }
 
-    // User profile: only the authenticated user can access their own document
+    // User profile and SceneSwap data isolated by authenticated UID
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
 
-      // Subcollection for AlterEgo characters, quests, and progress
-      match /alterego/{document=**} {
+      // Subcollection for active SceneSwap party sessions, cast, and custom settings
+      match /sceneswap/{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // Subcollection for archived party scripts and film productions
+      match /scripts/{scriptId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
     }
