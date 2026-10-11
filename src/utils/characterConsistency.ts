@@ -4,7 +4,7 @@
 // across all acts and scene branches for graphic novel & cinematic consistency.
 // ============================================================================
 
-import { detectNameNationality, detectGenderAffinity } from './characterAvatars';
+import { detectNameNationality, detectGenderAffinity } from './characterAvatars.ts';
 
 export interface LockedCharacterVisual {
   player: string;

@@ -14,7 +14,7 @@ function apiServerPlugin(): Plugin {
     configureServer(server) {
       const app = express();
       app.use(express.json());
-      app.use(express.static(path.resolve(__dirname, 'public')));
+      app.use(express.static(path.resolve(process.cwd(), 'public')));
 
       app.post('/api/sceneswap', async (req, res) => {
         try {

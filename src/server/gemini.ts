@@ -1,5 +1,5 @@
 import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
-import { generateDynamicSceneSvg } from "../utils/characterConsistency";
+import { generateDynamicSceneSvg } from "../utils/characterConsistency.ts";
 
 function getGeminiClient(): GoogleGenAI | null {
   const apiKey = process.env.GEMINI_API_KEY;
