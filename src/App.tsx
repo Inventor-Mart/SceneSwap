@@ -270,10 +270,8 @@ export default function App() {
   const playerPhotoInputRef = useRef<HTMLInputElement>(null);
   const pendingPhotoPlayerRef = useRef<string | null>(null);
 
-  // On Mount: Initialize Firebase Auth listener and connectivity probe
+  // On Mount: Initialize Firebase Auth listener
   useEffect(() => {
-    testConnection();
-
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       if (user) {
