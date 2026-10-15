@@ -2,10 +2,13 @@ import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 import { generateDynamicSceneSvg } from "../utils/characterConsistency.ts";
 
 function getGeminiClient(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
+  const apiKey =
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.VITE_GEMINI_API_KEY;
+  if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.trim().length < 5) return null;
   return new GoogleGenAI({
-    apiKey,
+    apiKey: apiKey.trim(),
     httpOptions: {
       headers: {
         "User-Agent": "aistudio-build",
@@ -93,8 +96,8 @@ export async function generateSceneSwap(inputs: {
 Cast the given players into a living, dynamic screenplay scene in the genre "${inputs.genre}".
 Cast of Players: ${inputs.playerNames || "Amaka, Tunde, Chioma"}
 
-Create a short, punchy, high-tension 4 to 5 line scene matching "${inputs.genre}".
-Each player must have 1-2 sharp lines with stage directions.`;
+Create an extended, gripping, high-tension 10 to 14 line scene matching "${inputs.genre}".
+Each player must have 3-4 sharp lines with expressive stage directions and rapid back-and-forth dialogue.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.1-flash-lite",
@@ -204,15 +207,15 @@ function getFallbackSceneSwap(inputs: { playerNames: string; genre: string }): S
 }
 
 export async function generateSceneSwapChapter(inputs: SceneSwapChapterInputs): Promise<SceneSwapChapterResult> {
-  const cleanPlayers = (inputs.players || [])
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0 && p.length <= 16);
+  const cleanPlayers = (Array.isArray(inputs.players) ? inputs.players : [])
+    .map((p: any) => (typeof p === 'string' ? p : p?.name || String(p || '')).trim())
+    .filter((p) => p.length > 0 && p.length <= 24);
   const playerList = cleanPlayers.length >= 2 ? cleanPlayers : ["Amaka", "Tunde", "Chioma"];
   const chapterNumber = Math.min(Math.max(inputs.chapterNumber || 1, 1), 3);
   const isFinale = chapterNumber === 3;
-  const genre = inputs.genre || "Nollywood Drama";
-  const tone = inputs.tone || "High Energy & Hilarious Drama";
-  const wildcardHook = inputs.wildcardHook?.trim();
+  const genre = String(inputs.genre || "Nollywood Drama");
+  const tone = String(inputs.tone || "High Energy & Hilarious Drama");
+  const wildcardHook = typeof inputs.wildcardHook === 'string' ? inputs.wildcardHook.trim() : '';
 
   const ai = getGeminiClient();
   if (!ai) {
@@ -245,7 +248,7 @@ STRICT SCREENPLAY RULES:
 1. Every player in ${JSON.stringify(playerList)} MUST be cast as a distinct character with their exact player name, character role, archetype, motivation, and a quirky/dramatic secret.
 2. Provide a vivid, atmospheric setting_description (e.g. "INT. CHIEF ODUKOYA'S PENTHOUSE - BANANA ISLAND - MIDNIGHT RAINSTORM").
 3. Provide an evocative audio_cue (sound effects, musical tension, talking drums, or synthwave stabs).
-4. Create 6 to 9 script_lines. Every single player MUST have at least 1-2 spoken lines. Each line must include the exact player name as 'speaker', an evocative acting direction in brackets as 'direction' (e.g. "[Gasping, clutching their chest with royal disbelief]"), and natural, punchy 'line' matching "${genre}".
+4. Create 14 to 20 script_lines. Make this a substantial, extended scene with genuine narrative arc, rising suspense, dramatic twists, witty retorts, and heated confrontation beats. Every single player MUST have at least 3 to 4 spoken lines with realistic back-and-forth exchanges. Each line must include the exact player name as 'speaker', an evocative acting direction in brackets as 'direction' (e.g. "[Gasping, clutching their chest with royal disbelief]"), and natural, punchy, dramatic 'line' matching "${genre}".
 5. Plot Choices:
    ${
      isFinale
@@ -330,7 +333,7 @@ STRICT SCREENPLAY RULES:
     });
 
     const timeoutPromise = new Promise<null>((resolve) => {
-      setTimeout(() => resolve(null), 25000);
+      setTimeout(() => resolve(null), 45000);
     });
 
     const response = await Promise.race([apiCallPromise, timeoutPromise]);
@@ -340,16 +343,150 @@ STRICT SCREENPLAY RULES:
 
     const text = response.text;
     if (text) {
-      const parsed = JSON.parse(text) as SceneSwapChapterResult;
-      parsed.chapter_number = chapterNumber;
-      parsed.is_finale = isFinale;
-      return parsed;
+      try {
+        const parsed = JSON.parse(text);
+        return sanitizeChapterResult(parsed, inputs, playerList, chapterNumber, isFinale, genre, tone);
+      } catch (parseErr) {
+        console.warn("Failed to parse Gemini chapter JSON, falling back:", parseErr);
+        return getFallbackSceneSwapChapter({ ...inputs, players: playerList, chapterNumber });
+      }
     }
     return getFallbackSceneSwapChapter({ ...inputs, players: playerList, chapterNumber });
   } catch (error) {
     console.error("Gemini SceneSwap chapter generation error:", error);
     return getFallbackSceneSwapChapter({ ...inputs, players: playerList, chapterNumber });
   }
+}
+
+function sanitizeChapterResult(
+  raw: any,
+  inputs: SceneSwapChapterInputs,
+  playerList: string[],
+  chapterNumber: number,
+  isFinale: boolean,
+  genre: string,
+  tone: string
+): SceneSwapChapterResult {
+  if (!raw || typeof raw !== 'object') {
+    return getFallbackSceneSwapChapter({ ...inputs, players: playerList, chapterNumber });
+  }
+
+  // Normalize cast
+  const rawCast = Array.isArray(raw.cast)
+    ? raw.cast
+    : Array.isArray(raw.characters)
+    ? raw.characters
+    : Array.isArray(raw.actors)
+    ? raw.actors
+    : [];
+  const cast: Array<{ player: string; role: string; archetype: string; motivation: string; secret?: string }> = [];
+
+  playerList.forEach((player, idx) => {
+    const existing =
+      rawCast.find(
+        (c: any) => c && typeof c.player === 'string' && c.player.toLowerCase().trim() === player.toLowerCase().trim()
+      ) ||
+      rawCast[idx] ||
+      {};
+    cast.push({
+      player: player,
+      role: String(existing.role || existing.character || `Protagonist ${idx + 1}`),
+      archetype: String(existing.archetype || 'The Wildcard'),
+      motivation: String(existing.motivation || 'Uncover the truth and survive the ordeal'),
+      secret: existing.secret ? String(existing.secret) : undefined,
+    });
+  });
+
+  // Normalize script lines
+  const rawLines = Array.isArray(raw.script_lines)
+    ? raw.script_lines
+    : Array.isArray(raw.script)
+    ? raw.script
+    : Array.isArray(raw.lines)
+    ? raw.lines
+    : Array.isArray(raw.dialogue)
+    ? raw.dialogue
+    : [];
+  const script_lines: Array<{ speaker: string; direction?: string; line: string }> = [];
+
+  rawLines.forEach((l: any, idx: number) => {
+    if (!l) return;
+    const speaker =
+      typeof l.speaker === 'string' && l.speaker.trim()
+        ? l.speaker.trim()
+        : typeof l.character === 'string' && l.character.trim()
+        ? l.character.trim()
+        : playerList[idx % playerList.length];
+    const direction =
+      typeof l.direction === 'string'
+        ? l.direction
+        : typeof l.stageDirection === 'string'
+        ? l.stageDirection
+        : undefined;
+    const line =
+      typeof l.line === 'string' && l.line.trim()
+        ? l.line.trim()
+        : typeof l.dialogue === 'string' && l.dialogue.trim()
+        ? l.dialogue.trim()
+        : typeof l.text === 'string' && l.text.trim()
+        ? l.text.trim()
+        : '';
+    if (line) {
+      script_lines.push({ speaker, direction, line });
+    }
+  });
+
+  if (script_lines.length === 0) {
+    cast.forEach((c) => {
+      script_lines.push({
+        speaker: c.player,
+        direction: '[Looking intently around the room]',
+        line: `We have to make our next move right now before anyone finds out!`,
+      });
+    });
+  }
+
+  // Normalize plot choices
+  const rawChoices = Array.isArray(raw.plot_choices)
+    ? raw.plot_choices
+    : Array.isArray(raw.choices)
+    ? raw.choices
+    : Array.isArray(raw.options)
+    ? raw.options
+    : [];
+  const plot_choices: Array<{ id: 'A' | 'B' | 'C'; label: string; description: string; consequence_hint: string }> = [];
+
+  if (!isFinale) {
+    const choiceIds: Array<'A' | 'B' | 'C'> = ['A', 'B', 'C'];
+    choiceIds.forEach((id, idx) => {
+      const existing =
+        rawChoices.find((c: any) => c && (c.id === id || String(c.id).toUpperCase() === id)) ||
+        rawChoices[idx] ||
+        {};
+      plot_choices.push({
+        id,
+        label: String(existing.label || existing.title || `Option ${id}: The Next Move`),
+        description: String(existing.description || existing.action || `Choose Option ${id} to advance the scene.`),
+        consequence_hint: String(existing.consequence_hint || existing.hint || existing.consequence || 'The plot thickens with unexpected consequences!'),
+      });
+    });
+  }
+
+  return {
+    chapter_number: chapterNumber,
+    chapter_title: String(raw.chapter_title || raw.title || `Act ${chapterNumber}: The Turning Point`),
+    genre: String(raw.genre || genre),
+    tone: String(raw.tone || tone),
+    setting_description: String(raw.setting_description || raw.setting || 'INT. SCENE STAGE - DRAMATIC CINEMATIC ATMOSPHERE'),
+    audio_cue: String(raw.audio_cue || raw.audioCue || 'Dramatic synthesized audio swell.'),
+    cast,
+    script_lines,
+    plot_choices,
+    is_finale: isFinale,
+    finale_summary: isFinale
+      ? String(raw.finale_summary || raw.summary || 'Against all odds, the narrative reached its legendary culmination!')
+      : undefined,
+  };
 }
 
 export function getFallbackSceneSwapChapter(inputs: SceneSwapChapterInputs): SceneSwapChapterResult {
@@ -385,6 +522,12 @@ export function getFallbackSceneSwapChapter(inputs: SceneSwapChapterInputs): Sce
           { speaker: p3, direction: "[Checking the biometric bio-scanner with trembling fingers]", line: "Forget the cables! The air filtration system is pumping unknown synthetic mist into the cabins!" },
           ...(players.length >= 4 ? [{ speaker: p4, direction: "[Tapping the encrypted headset with wide eyes]", line: "Commander, someone just transmitted an override command from inside this exact airlock!" }] : []),
           { speaker: p1, direction: "[Turning slowly toward the squad, hand resting near the side holster]", line: "Nobody touches that blast door until we figure out who just locked us in." },
+          { speaker: p2, direction: "[Wiping oil from visor, voice shaking with adrenaline]", line: "Commander, my telemetry monitor says we have ninety seconds before the emergency oxygen tank vents into deep vacuum!" },
+          { speaker: p3, direction: "[Shining an ultraviolet beam at the ventilation grill]", line: "Look at these traces! This isn't station equipment—it's military-grade neurotoxin!" },
+          ...(players.length >= 4 ? [{ speaker: p4, direction: "[Frantically cycling through audio logs on the datapad]", line: "I found the transmission log! The command originated from a terminal registered to someone standing right here!" }] : []),
+          { speaker: p1, direction: "[Stepping in front of the manual purge valve]", line: "Then we settle this right now. Nobody leaves this compartment until we vote on our next move." },
+          { speaker: p2, direction: "[Holding up a severed hydraulic hose like a weapon]", line: "If we don't vent this airlock right now, there won't be anyone left alive to accuse!" },
+          { speaker: p3, direction: "[Bracing against the bulkhead as the deck shudders violently]", line: "Decide now, Commander! The hull integrity alarm is at critical red!" },
         ],
         plot_choices: [
           { id: "A", label: "Option A: Manual Airlock Venting", description: "Purge the toxic mist into deep space, risking complete atmospheric collapse.", consequence_hint: "Will save them from the poison, but leaves only 2 minutes of reserve oxygen!" },
@@ -412,7 +555,12 @@ export function getFallbackSceneSwapChapter(inputs: SceneSwapChapterInputs): Sce
           { speaker: p1, direction: "[Grabbing the safety railing as boots clamp to the metal deck]", line: "Gravity is back, but look at the pressure monitors. The escape pods are ejecting empty!" },
           { speaker: p3, direction: "[Holding up a glowing cyan canister found inside the wall panel]", line: "Someone wanted us trapped while they stole the Genesis sample! Look at this seal!" },
           ...(players.length >= 4 ? [{ speaker: p4, direction: "[Frantically scanning telemetry]", line: "A stealth shuttle just decoupled from the exterior hull! They are leaving us behind!" }] : []),
+          { speaker: p2, direction: "[Spitting blood from a cut lip, coughing against the smoke]", line: "The shuttle is spooling up warp drives! In forty seconds they will be out of sub-orbital range!" },
           { speaker: p1, direction: "[Eyes hardening behind the illuminated visor glass]", line: "We are not dying in orbit today. We take control of the orbital rail cannon." },
+          { speaker: p3, direction: "[Checking the remaining pulse levels of the sample]", line: "If the cannon blast hits their reactor, the Genesis sample will vaporize with the shuttle!" },
+          ...(players.length >= 4 ? [{ speaker: p4, direction: "[Rerouting station targeting sensors]", line: "I've locked onto their port thruster! A clean surgical shot can disable them without detonation!" }] : []),
+          { speaker: p2, direction: "[Grasping the manual railgun capacitor levers]", line: "Targeting capacitor is charging... but it will drain all remaining life support to fifty percent!" },
+          { speaker: p1, direction: "[Slamming the targeting visor down]", line: "Do it. Fortune favors the desperate. Stand by for impact!" },
         ],
         plot_choices: [
           { id: "A", label: "Option A: Fire the Rail Cannon", description: "Disable the fleeing shuttle's thrusters to force them back.", consequence_hint: "Could detonate the entire docking ring!" },
@@ -441,6 +589,10 @@ export function getFallbackSceneSwapChapter(inputs: SceneSwapChapterInputs): Sce
           { speaker: p3, direction: "[Holding the intact medical vial up to the sunlight pouring through the canopy]", line: "The sample is safe. Earth will have the cure before morning." },
           ...(players.length >= 4 ? [{ speaker: p4, direction: "[Throwing both hands in the air cheering]", line: "Earth Command is responding on all frequencies! They are naming an entire fleet after us!" }] : []),
           { speaker: p1, direction: "[Looking out into the sunrise with an unforgettable smirk]", line: "Cut the alarms. Someone pour a victory ration. We just saved the world." },
+          { speaker: p2, direction: "[Laughing aloud as zero-gravity tools gently float around the bridge]", line: "Next time someone offers me an orbital station contract, I'm staying on solid ground in Lagos!" },
+          { speaker: p3, direction: "[Smiling warmly and securing the Genesis vial in the cryo-locker]", line: "Admit it, Ray—you wouldn't trade this crew for anything in the galaxy." },
+          ...(players.length >= 4 ? [{ speaker: p4, direction: "[Broadcasting the victory fanfare across all orbital channels]", line: "Orbital Command confirms extraction shuttle ETA: fifteen minutes! We're going home!" }] : []),
+          { speaker: p1, direction: "[Raising a dented metal canteen in a silent toast to the crew]", line: "To Station 9. We faced the abyss, and the abyss blinked first." },
         ],
         plot_choices: [],
         is_finale: true,
@@ -470,6 +622,12 @@ export function getFallbackSceneSwapChapter(inputs: SceneSwapChapterInputs): Sce
         { speaker: p3, direction: "[Clearing throat loudly and breaking the red wax seal on a thick blue envelope]", line: "Excuse me, everyone! Before anyone signs any checks, Chief Balogun recorded a video testament with me yesterday." },
         ...(players.length >= 4 ? [{ speaker: p4, direction: "[Spitting out kola nut and pointing his walking stick aggressively]", line: "Video what?! In this culture, a dead man cannot speak through a television set!" }] : []),
         { speaker: p1, direction: "[Eyes narrowing with ice-cold venom as she turns to the lawyer]", line: "Barrister Kemi... if you value your license and your car parked outside, choose your next words very carefully." },
+        { speaker: p2, direction: "[Leaning across the table, neck veins bulging]", line: "Don't intimidate the attorney, Mama! We all know Papa amended his testament three days before he was admitted to hospital!" },
+        { speaker: p3, direction: "[Calmly sliding reading glasses down the bridge of nose]", line: "Indeed he did, Dapo. And according to clause seven, any beneficiary with undeclared international debt is instantly disqualified." },
+        ...(players.length >= 4 ? [{ speaker: p4, direction: "[Throwing arms wide in theatrical outrage]", line: "Yeeepa! Disqualified?! Then what of the eighty million naira for the ancestral palace in Ibadan?!" }] : []),
+        { speaker: p1, direction: "[Pouring herself a glass of vintage palm wine with a chilling smile]", line: "Sit down, Segun. The only thing you are inheriting from this parlour tonight is your own walking stick." },
+        { speaker: p2, direction: "[Frantically dialing a number under the table]", line: "This is a setup! The board in London will never ratify this bogus paperwork!" },
+        { speaker: p3, direction: "[Pressing the remote control button toward the wall screen]", line: "Then let Chief Balogun explain it himself. Roll the tape!" },
       ],
       plot_choices: [
         { id: "A", label: "Option A: Play the Secret Video", description: "Insert the flash drive into the 85-inch television to reveal Chief's dying confession.", consequence_hint: "Will expose Dapo's secret debt, but might disinherit everyone!" },
@@ -498,6 +656,11 @@ export function getFallbackSceneSwapChapter(inputs: SceneSwapChapterInputs): Sce
         { speaker: p3, direction: "[Unrolling a stamped deed with government seal in front of them]", line: "The accounts weren't frozen by Mama! The anti-fraud commission traced a twenty billion transfer initiated from this IP address!" },
         ...(players.length >= 4 ? [{ speaker: p4, direction: "[Sneaking toward the garden exit with a bulging briefcase]", line: "Family matter is good, but when police sirens enter the compound, elder must take evening stroll!" }] : []),
         { speaker: p2, direction: "[Grabbing the edge of the desk, staring in sheer terror]", line: "Wait... someone set me up! The password was only known by one other person in this room!" },
+        { speaker: p1, direction: "[Setting the porcelain cup down with a sharp porcelain click]", line: "You think your father didn't install keyloggers on the family Wi-Fi? Sit down before I summon the gate guards!" },
+        { speaker: p3, direction: "[Tapping her pen against the ledger pages]", line: "The transfer went to an offshore holding entity registered under the name: Segun Ventures International." },
+        ...(players.length >= 4 ? [{ speaker: p4, direction: "[Freezing mid-step at the French doors, turning with an innocent grin]", line: "Segun Ventures?! Ah, that must be a typographical error by the British clerks!" }] : []),
+        { speaker: p2, direction: "[Lurching toward Segun in disbelief]", line: "Uncle Segun?! You were advising me to take the loan while you were siphoning the vault?!" },
+        { speaker: p1, direction: "[Rising from her throne-like armchair, eyes flashing like lightning]", line: "Enough! Neither of you will leave this mansion until the family deed is returned to this table!" },
       ],
       plot_choices: [
         { id: "A", label: "Option A: Unmask the Real Mole", description: "Check the study CCTV footage on the iPad to catch the real culprit red-handed.", consequence_hint: "Guaranteed jaw-dropping reveal of who transferred the billions!" },
@@ -526,6 +689,9 @@ export function getFallbackSceneSwapChapter(inputs: SceneSwapChapterInputs): Sce
         { speaker: p1, direction: "[Placing a royal beaded necklace over Dapo's neck with tears of joy]", line: "Stand up, my son! When gold passes through fire, it shines brighter! Let the champagne flow!" },
         ...(players.length >= 4 ? [{ speaker: p4, direction: "[Throwing stacks of crisp naira notes into the air dancing Shaku-Shaku]", line: "Oya spray the money! Sorrow has vanished from Ikoyi tonight!" }] : []),
         { speaker: p1, direction: "[Raising her golden champagne flute high toward the ceiling]", line: "To the Balogun bloodline: unbreakable, undefeated, and forever glorious!" },
+        { speaker: p2, direction: "[Raising his glass alongside hers, smiling genuinely for the first time]", line: "To family, to legacy, and to the lessons that made us who we are today!" },
+        { speaker: p3, direction: "[Toast echoed by the cheering grand ballroom]", line: "Long live the Balogun dynasty!" },
+        ...(players.length >= 4 ? [{ speaker: p4, direction: "[Grabbing the live microphone from the highlife band]", line: "Band leader, hit that talking drum louder! We are celebrating until sunrise!" }] : []),
       ],
       plot_choices: [],
       is_finale: true,
@@ -543,6 +709,7 @@ export interface RealisticImageRequest {
   chapter_title?: string;
   type?: 'scene' | 'character';
   aspectRatio?: '9:16' | '16:9' | '3:4' | '1:1';
+  forceRegenerate?: boolean;
   cast?: Array<{
     player: string;
     role: string;
@@ -597,13 +764,17 @@ export async function generateSceneSwapRealisticImage(
   // Generate cache key
   const cacheKey = isCharacter && inputs.character
     ? `char:${inputs.character.player}:${inputs.character.role}:${genre}`
-    : `scene:${genre}:${chapterNumber}:${setting.slice(0, 50)}`;
+    : `scene:${genre}:${chapterNumber}:${setting.slice(0, 50)}:${inputs.activeSpeaker || ''}`;
 
-  if (imageCache.has(cacheKey)) {
-    return imageCache.get(cacheKey)!;
+  if (!inputs.forceRegenerate && imageCache.has(cacheKey)) {
+    const cached = imageCache.get(cacheKey)!;
+    // Don't return SVG cached fallbacks for scene view
+    if (!cached.imageUrl.startsWith('data:image/svg')) {
+      return cached;
+    }
   }
 
-  // Characters are generated with instant photorealistic vector art
+  // Characters are generated with instant photorealistic portrait art
   if (isCharacter && inputs.character) {
     const result: RealisticImageResponse = {
       imageUrl: getFallbackRealisticImage(inputs),
@@ -621,7 +792,7 @@ export async function generateSceneSwapRealisticImage(
   const characterActionsFormatted = inputs.character_beats && inputs.character_beats.length > 0
     ? inputs.character_beats
         .map((b) => {
-          const wardrobeTxt = b.wardrobe ? ` [Wearing locked wardrobe: ${b.wardrobe}]` : '';
+          const wardrobeTxt = b.wardrobe ? ` [Wearing: ${b.wardrobe}]` : '';
           const propsTxt = b.props ? ` [Props: ${b.props}]` : '';
           return `- "${b.player}" as ${b.role}${wardrobeTxt}${propsTxt}:\n  PHYSICAL ACTION: ${b.action}\n  SPOKEN DIALOGUE IN SCENE: "${b.dialogue}"`;
         })
@@ -645,46 +816,41 @@ export async function generateSceneSwapRealisticImage(
     : '';
 
   const actionDirective = inputs.physicalActionPrompt
-    ? `PRIMARY SCENE ACTION (GRAPHIC NOVEL / COMIC PANEL): ${inputs.physicalActionPrompt}`
-    : `PHYSICAL ACTION: The characters are physically inside the setting interacting together and engaging with the environment (e.g. if combat, they are actively fighting; if confrontation, facing each other with tense gestures; if celebration, raising glasses together).`;
+    ? `PRIMARY SCENE ACTION: ${inputs.physicalActionPrompt}`
+    : `PHYSICAL ACTION: The characters are physically inside the setting interacting together and engaging with the environment with expressive, natural cinematic presence.`;
 
   const prompt = targetAspectRatio === '9:16'
-    ? `Cinematic 9:16 vertical film still, full scene graphic novel splash art, photorealistic 8k Arri Alexa 35 cinema capture.
-=== SCENE HEADING (PRIMARY VISUAL ARCHITECTURE) ===
-SCENE HEADING: "${setting}"
-MOVIE GENRE: "${genre}" | TONE: "${tone}" | ACT ${chapterNumber}: "${inputs.chapter_title || ''}"
-The entire environment, architecture, lighting, atmosphere, and room geometry MUST strictly depict the location and conditions in the SCENE HEADING above.
+    ? `A photorealistic, vertical 9:16 cinematic feature film still, shot on 35mm Arri Alexa 35 with Panavision anamorphic lenses, 8k resolution, filling the entire vertical frame.
+=== SCENE LOCATION & ARCHITECTURE ===
+LOCATION: "${setting}"
+FILM GENRE: "${genre}" | TONE: "${tone}" | ACT ${chapterNumber}: "${inputs.chapter_title || ''}"
+The visual composition must showcase the exact location specified in the setting: authentic architectural details, atmospheric depth, realistic environmental lighting, practical light sources, natural reflections, and rich physical textures.
 
-=== CHARACTERS INSIDE THE SCENE: PHYSICAL ACTIONS & DIALOGUES ===
-${characterActionsFormatted}
-
+=== DRAMATIC ACTION & SCENE ATMOSPHERE ===
 ${activeFocusText}
 ${actionDirective}
+${characterActionsFormatted ? `ENSEMBLE CAST MOMENT:\n${characterActionsFormatted}` : ''}
 ${consistencyDirective}
 
-MANDATORY RULES:
-- The visuals must directly depict the exact SCENE HEADING "${setting}".
-- Characters MUST be physically drawn inside the environment performing these exact actions and dialogue moments together in the room.
-- NO floating avatars, NO circular headshots, NO speech bubbles, NO text overlays.
-- 100% full scene artwork where characters and setting are unified.`
-    : `Cinematic wide 16:9 movie still, full scene graphic novel frame, 8k Arri Alexa 35 anamorphic lens.
-=== SCENE HEADING (PRIMARY VISUAL ARCHITECTURE) ===
-SCENE HEADING: "${setting}"
-MOVIE GENRE: "${genre}" | TONE: "${tone}" | ACT ${chapterNumber}
-The entire environment and lighting MUST strictly depict the SCENE HEADING above.
+=== PHOTOREALISTIC CINEMATOGRAPHY REQUIREMENTS ===
+- Pure cinematic live-action cinematography with realistic lighting, volumetric atmosphere, and natural depth of field.
+- Full vertical 9:16 frame composition that completely fills the vertical screen from top to bottom.
+- ABSOLUTELY NO illustration, NO cartoon, NO anime, NO comic art, NO sketch, NO graphic novel shapes, NO geometric stick figures.
+- NO borders, NO margins, NO letterboxing, NO subtitles, NO floating avatars, NO text, NO watermarks, NO badges.`
+    : `A photorealistic, cinematic 16:9 movie production still, shot on 35mm Arri Alexa 35 anamorphic lens, 8k resolution.
+=== SCENE LOCATION & ARCHITECTURE ===
+LOCATION: "${setting}"
+FILM GENRE: "${genre}" | TONE: "${tone}" | ACT ${chapterNumber}
+The visual composition must depict the exact location specified in the setting with realistic architectural details, practical lighting, and rich textures.
 
-=== CHARACTERS INSIDE THE SCENE: PHYSICAL ACTIONS & DIALOGUES ===
-${characterActionsFormatted}
-
-${activeFocusText}
+=== DRAMATIC ACTION & ENSEMBLE ===
 ${actionDirective}
+${characterActionsFormatted ? `CAST DETAILS:\n${characterActionsFormatted}` : ''}
 ${consistencyDirective}
 
-MANDATORY RULES:
-- The visual environment must directly match the SCENE HEADING "${setting}".
-- Characters MUST be physically inside the environment interacting together based on their actions and dialogues.
-- NO floating avatars, NO isolated portrait cards, NO text overlays, NO speech bubbles.
-- Masterful composition, dramatic lighting, unified film still masterpiece.`;
+=== MANDATORY CINEMATOGRAPHY RULES ===
+- Photorealistic live-action cinema still with realistic lighting and cinematic staging.
+- ABSOLUTELY NO cartoons, NO illustrations, NO comic art, NO graphic novel panels, NO geometric drawings, NO text overlays.`;
 
   const ai = getGeminiClient();
   const isCooldown = Date.now() < imageQuotaCooldownUntil;
@@ -735,7 +901,7 @@ MANDATORY RULES:
     }
   }
 
-  // Fallback to high-fidelity realistic procedural backdrop / portrait
+  // Fallback to high-fidelity realistic photographic backdrop
   const fallbackUrl = getFallbackRealisticImage(inputs);
   const fallbackResult: RealisticImageResponse = {
     imageUrl: fallbackUrl,
@@ -745,6 +911,39 @@ MANDATORY RULES:
   };
   imageCache.set(cacheKey, fallbackResult);
   return fallbackResult;
+}
+
+export function getSceneBackdropImage(genre: string, chapter: number): string {
+  const ch = Math.min(Math.max(chapter || 1, 1), 3);
+  const g = String(genre || '').toLowerCase();
+  if (g.includes('sci-fi') || g.includes('scifi')) {
+    if (ch === 1) return '/images/scenes/scifi_act1.jpg';
+    if (ch === 2) return '/images/scenes/scifi_act2.jpg';
+    return '/images/scenes/scifi_act3.jpg';
+  }
+  if (g.includes('afro') || g.includes('heist')) {
+    if (ch === 1) return '/images/scenes/heist_act1.jpg';
+    if (ch === 2) return '/images/scenes/heist_act2.jpg';
+    return '/images/scenes/heist_act3.jpg';
+  }
+  if (g.includes('horror')) {
+    if (ch === 1) return '/images/scenes/horror_act1.jpg';
+    if (ch === 2) return '/images/scenes/horror_act2.jpg';
+    return '/images/scenes/horror_act3.jpg';
+  }
+  if (g.includes('rom') || g.includes('comedy')) {
+    if (ch === 1) return '/images/scenes/romcom_act1.jpg';
+    if (ch === 2) return '/images/scenes/romcom_act2.jpg';
+    return '/images/scenes/romcom_act3.jpg';
+  }
+  if (g.includes('cyber') || g.includes('detective')) {
+    if (ch === 1) return '/images/scenes/detective_act1.jpg';
+    if (ch === 2) return '/images/scenes/detective_act2.jpg';
+    return '/images/scenes/detective_act3.jpg';
+  }
+  if (ch === 1) return '/images/scenes/nollywood_act1.jpg';
+  if (ch === 2) return '/images/scenes/nollywood_act2.jpg';
+  return '/images/scenes/nollywood_act3.jpg';
 }
 
 export function getFallbackRealisticImage(inputs: RealisticImageRequest): string {
@@ -765,130 +964,10 @@ export function getFallbackRealisticImage(inputs: RealisticImageRequest): string
     return '/images/characters/socialite.jpg';
   }
 
-  // Dynamically generate an SVG scene illustration that directly matches the SCENE HEADING
-  // and the CHARACTERS performing their actions and dialogue inside the room!
-  return generateDynamicSceneSvg(
-    inputs.scene_heading || inputs.setting_description || 'INT. SCENE - LOCATION',
-    inputs.genre || 'Nollywood Drama',
-    inputs.character_beats || [],
-    inputs.aspectRatio === '16:9' ? '16:9' : '9:16'
-  );
+  // Return high-resolution realistic cinematic scene photograph matching genre and act
+  return getSceneBackdropImage(inputs.genre || 'Nollywood Drama', inputs.chapter_number || 1);
 }
 
-function getRealisticSceneSvg(genre: string, chapter: number, settingDesc: string): string {
-  let palette = {
-    bg1: '#120404',
-    bg2: '#2b0909',
-    accent1: '#ca8a04',
-    accent2: '#eab308',
-    glow: 'rgba(234, 179, 8, 0.25)',
-    ambient: '#450a0a',
-  };
-
-  if (genre.includes('Sci-Fi')) {
-    palette = {
-      bg1: '#020617',
-      bg2: '#0f172a',
-      accent1: '#06b6d4',
-      accent2: '#38bdf8',
-      glow: 'rgba(6, 182, 212, 0.3)',
-      ambient: '#082f49',
-    };
-  } else if (genre.includes('Afro') || genre.includes('Heist')) {
-    palette = {
-      bg1: '#052e16',
-      bg2: '#022c22',
-      accent1: '#10b981',
-      accent2: '#34d399',
-      glow: 'rgba(16, 185, 129, 0.3)',
-      ambient: '#064e3b',
-    };
-  } else if (genre.includes('Horror')) {
-    palette = {
-      bg1: '#180728',
-      bg2: '#2e1065',
-      accent1: '#a855f7',
-      accent2: '#c084fc',
-      glow: 'rgba(168, 85, 247, 0.25)',
-      ambient: '#3b0764',
-    };
-  } else if (genre.includes('Rom') || genre.includes('Comedy')) {
-    palette = {
-      bg1: '#2b0817',
-      bg2: '#4c0519',
-      accent1: '#f43f5e',
-      accent2: '#fb7185',
-      glow: 'rgba(244, 63, 94, 0.3)',
-      ambient: '#881337',
-    };
-  } else if (genre.includes('Cyber') || genre.includes('Detective')) {
-    palette = {
-      bg1: '#0a0a1a',
-      bg2: '#1e1b4b',
-      accent1: '#6366f1',
-      accent2: '#818cf8',
-      glow: 'rgba(99, 102, 241, 0.3)',
-      ambient: '#312e81',
-    };
-  }
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="100%" height="100%">
-    <defs>
-      <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
-        <stop offset="40%" stop-color="transparent" stop-opacity="0" />
-        <stop offset="100%" stop-color="#000000" stop-opacity="0.85" />
-      </radialGradient>
-      <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${palette.bg1}" />
-        <stop offset="60%" stop-color="${palette.bg2}" />
-        <stop offset="100%" stop-color="${palette.ambient}" />
-      </linearGradient>
-      <radialGradient id="keyLight" cx="35%" cy="30%" r="60%">
-        <stop offset="0%" stop-color="${palette.accent2}" stop-opacity="0.45" />
-        <stop offset="50%" stop-color="${palette.accent1}" stop-opacity="0.15" />
-        <stop offset="100%" stop-color="transparent" stop-opacity="0" />
-      </radialGradient>
-      <linearGradient id="floorGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#0a0a0f" />
-        <stop offset="100%" stop-color="#030305" />
-      </linearGradient>
-      <filter id="cinematicGlow" x="-20%" y="-20%" width="140%" height="140%">
-        <feGaussianBlur stdDeviation="24" result="blur" />
-        <feComposite in="SourceGraphic" in2="blur" operator="over" />
-      </filter>
-    </defs>
-
-    <rect width="1280" height="720" fill="url(#skyGrad)" />
-    <circle cx="450" cy="220" r="480" fill="url(#keyLight)" />
-
-    <path d="M 0 480 L 180 320 L 420 320 L 520 480 Z" fill="#000000" opacity="0.4" />
-    <path d="M 760 480 L 880 340 L 1120 340 L 1280 480 Z" fill="#000000" opacity="0.4" />
-
-    <rect x="240" y="80" width="800" height="420" rx="24" fill="none" stroke="${palette.accent1}" stroke-opacity="0.25" stroke-width="2" />
-    <rect x="280" y="120" width="720" height="340" rx="16" fill="none" stroke="${palette.accent2}" stroke-opacity="0.15" stroke-width="1" />
-
-    <polygon points="0,500 1280,500 1280,720 0,720" fill="url(#floorGrad)" />
-    <ellipse cx="640" cy="540" rx="420" ry="40" fill="${palette.glow}" filter="url(#cinematicGlow)" />
-
-    <line x1="0" y1="500" x2="1280" y2="500" stroke="${palette.accent1}" stroke-opacity="0.4" stroke-width="2" />
-
-    <circle cx="320" cy="260" r="2.5" fill="#ffffff" opacity="0.6" />
-    <circle cx="480" cy="360" r="1.8" fill="${palette.accent2}" opacity="0.7" />
-    <circle cx="820" cy="210" r="3" fill="#ffffff" opacity="0.5" />
-    <circle cx="940" cy="380" r="2" fill="${palette.accent1}" opacity="0.8" />
-    <circle cx="640" cy="190" r="2.2" fill="#ffffff" opacity="0.7" />
-
-    <rect width="1280" height="720" fill="url(#vignette)" />
-
-    <rect x="0" y="0" width="1280" height="28" fill="#000000" opacity="0.9" />
-    <rect x="0" y="692" width="1280" height="28" fill="#000000" opacity="0.9" />
-
-    <text x="36" y="20" fill="#a1a1aa" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700" letter-spacing="2">ACT ${chapter} CINEMATIC FILM STILL • ${genre.toUpperCase()}</text>
-    <text x="1244" y="20" text-anchor="end" fill="${palette.accent2}" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700" letter-spacing="1">ARRI ALEXA 8K</text>
-  </svg>`;
-
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
 
 function getRealisticCharacterSvg(name: string, role: string, genre: string): string {
   let hash = 0;
@@ -948,6 +1027,6 @@ function getRealisticCharacterSvg(name: string, role: string, genre: string): st
     <text x="200" y="375" text-anchor="middle" fill="${accent}" font-family="system-ui, -apple-system, sans-serif" font-size="10" font-weight="600">${role}</text>
   </svg>`;
 
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 

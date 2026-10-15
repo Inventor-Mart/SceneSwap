@@ -171,30 +171,34 @@ const WARDROBE_PRESETS: Record<string, { wardrobe: string; props: string }[]> = 
  * the characters have 100% consistent faces, hair, wardrobe, and props across all scenes.
  */
 export function lockOrGetCharacterVisualBible(
-  cast: Array<{ player: string; role: string; archetype?: string; motivation?: string }>,
-  genre: string,
+  cast: Array<{ player: string; role: string; archetype?: string; motivation?: string }> = [],
+  genre: string = 'Nollywood Drama',
   customPhotos: Record<string, string> = {}
 ): CharacterVisualBible {
   const existing = getStoredVisualBible();
   let updated = { ...existing };
   let hasNew = false;
+  const safeCast = Array.isArray(cast) ? cast : [];
 
-  const normalizedGenre = genre.toLowerCase().includes('scifi') || genre.toLowerCase().includes('sci-fi')
+  const genreStr = String(genre || '');
+  const normalizedGenre = genreStr.toLowerCase().includes('scifi') || genreStr.toLowerCase().includes('sci-fi')
     ? 'scifi'
-    : genre.toLowerCase().includes('heist')
+    : genreStr.toLowerCase().includes('heist')
     ? 'heist'
-    : genre.toLowerCase().includes('cyber')
+    : genreStr.toLowerCase().includes('cyber')
     ? 'cyberpunk'
-    : genre.toLowerCase().includes('horror')
+    : genreStr.toLowerCase().includes('horror')
     ? 'horror'
-    : genre.toLowerCase().includes('nollywood') || genre.toLowerCase().includes('afro')
+    : genreStr.toLowerCase().includes('nollywood') || genreStr.toLowerCase().includes('afro')
     ? 'nollywood'
     : 'default';
 
   const presets = WARDROBE_PRESETS[normalizedGenre] || WARDROBE_PRESETS.default;
 
-  cast.forEach((member, index) => {
-    const key = member.player.toLowerCase().trim();
+  safeCast.forEach((member, index) => {
+    if (!member || !member.player) return;
+    const key = String(member.player).toLowerCase().trim();
+    if (!key) return;
     if (!updated[key]) {
       hasNew = true;
       const nationality = detectNameNationality(member.player);
@@ -293,7 +297,7 @@ export function extractPhysicalSceneAction(
   ].join(' ').toLowerCase();
 
   if (/fight|punch|kick|brawl|clash|attack|strike|weapon|sword|gun|shoot|combat|duel|tackle/.test(combinedText)) {
-    return 'HIGH-OCTANE PHYSICAL COMBAT: The characters are in dynamic, mid-action combat—striking, defending, weapons drawn or clashing hand-to-hand with kinetic energy, debris and dramatic motion blur like a premier graphic novel fight splash page.';
+    return 'HIGH-OCTANE PHYSICAL COMBAT: The characters are in dynamic, mid-action combat—striking, defending, weapons drawn or clashing hand-to-hand with kinetic energy, debris and dramatic motion blur like a premier cinematic live-action film sequence.';
   }
 
   if (/chase|run|flee|escape|sprint|pursue|dash|vehicle|drive/.test(combinedText)) {
@@ -332,15 +336,27 @@ export interface CharacterActionBeat {
 }
 
 export function extractCharacterActionBeats(
-  scriptLines: Array<{ speaker: string; direction?: string; line: string }>,
-  cast: Array<{ player: string; role: string }>,
-  bible: CharacterVisualBible
+  scriptLines: Array<{ speaker: string; direction?: string; line: string }> = [],
+  cast: Array<{ player: string; role: string }> = [],
+  bible: CharacterVisualBible = {}
 ): CharacterActionBeat[] {
-  return cast.map((member) => {
-    const key = member.player.toLowerCase().trim();
-    const locked = bible[key];
-    const memberLines = scriptLines.filter(
-      (l) => l.speaker.toLowerCase().trim() === key
+  const safeCast = Array.isArray(cast) ? cast : [];
+  const safeLines = Array.isArray(scriptLines) ? scriptLines : [];
+  const safeBible = bible || {};
+
+  return safeCast.map((member) => {
+    if (!member || !member.player) {
+      return {
+        player: 'Actor',
+        role: 'Performer',
+        action: 'Visually reacting in the scene with intense focus and body language',
+        dialogue: '',
+      };
+    }
+    const key = String(member.player).toLowerCase().trim();
+    const locked = safeBible[key];
+    const memberLines = safeLines.filter(
+      (l) => l && typeof l.speaker === 'string' && l.speaker.toLowerCase().trim() === key
     );
 
     const actions = memberLines
@@ -349,13 +365,13 @@ export function extractCharacterActionBeats(
       .join('; ');
 
     const dialogues = memberLines
-      .map((l) => `"${l.line}"`)
+      .map((l) => `"${l.line || ''}"`)
       .slice(0, 2)
       .join(' / ');
 
     return {
       player: member.player,
-      role: member.role,
+      role: member.role || 'Actor',
       action: actions || 'Visually reacting in the scene with intense focus and body language',
       dialogue: dialogues || '',
       wardrobe: locked?.wardrobe,
@@ -365,14 +381,54 @@ export function extractCharacterActionBeats(
 }
 
 /**
+ * Helper to escape text for safe SVG rendering
+ */
+function escapeSvg(unsafe: string = ''): string {
+  return String(unsafe || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Word wrap helper for SVG text rendering
+ */
+function wrapSvgLines(text: string, maxChars: number = 38): string[] {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return [];
+  const words = clean.split(' ');
+  const lines: string[] = [];
+  let current = '';
+
+  for (const word of words) {
+    if ((current + ' ' + word).trim().length <= maxChars) {
+      current = (current + ' ' + word).trim();
+    } else {
+      if (current) lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+/**
  * Generate a dynamic high-fidelity graphic novel scene SVG that directly
- * renders the exact SCENE HEADING and the CHARACTERS performing their actions inside the room.
+ * renders the exact SCENE HEADING, the CHARACTERS performing their physical actions,
+ * and their spoken DIALOGUES in authentic comic splash panel style (no geometric shapes).
  */
 export function generateDynamicSceneSvg(
-  sceneHeading: string,
-  genre: string,
-  characterBeats: CharacterActionBeat[],
-  aspectRatio: '9:16' | '16:9' = '9:16'
+  sceneHeading: string = '',
+  genre: string = '',
+  characterBeats: CharacterActionBeat[] = [],
+  aspectRatio: '9:16' | '16:9' = '16:9',
+  activeSpeaker?: string,
+  activeLine?: string,
+  activeDirection?: string,
+  customPortraits: Record<string, string> = {},
+  actNumber: number = 1
 ): string {
   const isPortrait = aspectRatio === '9:16';
   const width = isPortrait ? 720 : 1280;
@@ -381,214 +437,193 @@ export function generateDynamicSceneSvg(
   const headingLower = (sceneHeading || '').toLowerCase();
   const genreLower = (genre || '').toLowerCase();
 
-  // Color grading and architecture based on the scene heading
-  const isAirlockOrScifi = headingLower.includes('airlock') || headingLower.includes('orbit') || headingLower.includes('station') || genreLower.includes('sci-fi');
-  const isParlourOrMansion = headingLower.includes('parlour') || headingLower.includes('banquet') || headingLower.includes('manor') || headingLower.includes('ikoyi') || genreLower.includes('nollywood');
-  const isHeistOrVault = headingLower.includes('vault') || headingLower.includes('safe') || headingLower.includes('junction') || headingLower.includes('heist') || genreLower.includes('heist');
-  const isHorrorOrCrypt = headingLower.includes('crypt') || headingLower.includes('grave') || headingLower.includes('attic') || genreLower.includes('horror');
+  // Environment Classification
+  const isScifi = headingLower.includes('airlock') || headingLower.includes('orbit') || headingLower.includes('station') || headingLower.includes('module') || genreLower.includes('sci-fi');
+  const isBallroom = headingLower.includes('ballroom') || headingLower.includes('parlour') || headingLower.includes('manor') || headingLower.includes('mansion') || headingLower.includes('wedding') || headingLower.includes('ikoyi') || headingLower.includes('banquet') || genreLower.includes('nollywood');
+  const isVault = headingLower.includes('vault') || headingLower.includes('safe') || headingLower.includes('junction') || headingLower.includes('heist') || headingLower.includes('bank') || genreLower.includes('heist');
+  const isHorror = headingLower.includes('crypt') || headingLower.includes('grave') || headingLower.includes('attic') || headingLower.includes('manor') || genreLower.includes('horror');
+  const isCyber = headingLower.includes('cyber') || headingLower.includes('neon') || headingLower.includes('alley') || headingLower.includes('detective') || genreLower.includes('cyber') || genreLower.includes('detective');
 
-  // Palette selection
-  let bgTop = '#020617';
-  let bgMid = '#0f172a';
-  let bgBottom = '#020617';
-  let ambientGlow = '#38bdf8';
-  let accentStrobe = '#ef4444';
+  // Palette Theme
+  let wallGrad1 = '#1c1917';
+  let wallGrad2 = '#292524';
+  let floorColor = '#0c0a09';
+  let accentColor = '#f59e0b';
+  let glowColor = '#fbbf24';
+  let bannerColor = '#facc15';
 
-  if (isAirlockOrScifi) {
-    bgTop = '#030712';
-    bgMid = '#1e1b4b';
-    bgBottom = '#09090b';
-    ambientGlow = '#06b6d4';
-    accentStrobe = '#ef4444';
-  } else if (isParlourOrMansion) {
-    bgTop = '#1c1917';
-    bgMid = '#292524';
-    bgBottom = '#0c0a09';
-    ambientGlow = '#f59e0b';
-    accentStrobe = '#fbbf24';
-  } else if (isHeistOrVault) {
-    bgTop = '#020617';
-    bgMid = '#042f2e';
-    bgBottom = '#020617';
-    ambientGlow = '#10b981';
-    accentStrobe = '#06b6d4';
-  } else if (isHorrorOrCrypt) {
-    bgTop = '#09090b';
-    bgMid = '#18181b';
-    bgBottom = '#030712';
-    ambientGlow = '#a855f7';
-    accentStrobe = '#7e22ce';
+  if (isScifi) {
+    wallGrad1 = '#020617';
+    wallGrad2 = '#0f172a';
+    floorColor = '#030712';
+    accentColor = '#06b6d4';
+    glowColor = '#38bdf8';
+    bannerColor = '#38bdf8';
+  } else if (isVault) {
+    wallGrad1 = '#022c22';
+    wallGrad2 = '#064e3b';
+    floorColor = '#021814';
+    accentColor = '#10b981';
+    glowColor = '#34d399';
+    bannerColor = '#10b981';
+  } else if (isHorror) {
+    wallGrad1 = '#180728';
+    wallGrad2 = '#2e1065';
+    floorColor = '#090514';
+    accentColor = '#a855f7';
+    glowColor = '#c084fc';
+    bannerColor = '#c084fc';
+  } else if (isCyber) {
+    wallGrad1 = '#0a0a1a';
+    wallGrad2 = '#1e1b4b';
+    floorColor = '#050510';
+    accentColor = '#ec4899';
+    glowColor = '#a855f7';
+    bannerColor = '#f43f5e';
   }
 
-  // Architectural elements
+  // --- 1. CLEAN ATMOSPHERIC CINEMATIC LIGHTING (NO HARD SHAPES AT TOP OR BOTTOM) ---
   let environmentElements = '';
-  if (isAirlockOrScifi) {
+
+  if (isScifi) {
+    // Ambient sci-fi cosmos aura - smooth atmospheric glow, no hard geometric shapes
     environmentElements = `
-      <!-- Pressurized Airlock Bulkhead Arch -->
-      <circle cx="${width / 2}" cy="${height * 0.45}" r="${width * 0.42}" fill="none" stroke="#334155" stroke-width="28" opacity="0.6" />
-      <circle cx="${width / 2}" cy="${height * 0.45}" r="${width * 0.38}" fill="none" stroke="#64748b" stroke-width="8" stroke-dasharray="24 16" opacity="0.7" />
-      <!-- Red Alert Strobe Lights -->
-      <circle cx="${width * 0.15}" cy="${height * 0.2}" r="14" fill="${accentStrobe}" filter="url(#glowFilter)" opacity="0.9" />
-      <circle cx="${width * 0.85}" cy="${height * 0.2}" r="14" fill="${accentStrobe}" filter="url(#glowFilter)" opacity="0.9" />
-      <!-- Glowing Conduit Racks & Sparks -->
-      <path d="M0 ${height * 0.25} L${width} ${height * 0.25}" stroke="${ambientGlow}" stroke-width="4" opacity="0.5" />
-      <path d="M${width * 0.08} 0 L${width * 0.08} ${height}" stroke="#475569" stroke-width="12" opacity="0.4" />
-      <path d="M${width * 0.92} 0 L${width * 0.92} ${height}" stroke="#475569" stroke-width="12" opacity="0.4" />
-      <!-- Spark Particles -->
-      <circle cx="${width * 0.35}" cy="${height * 0.35}" r="3" fill="#fef08a" filter="url(#glowFilter)" />
-      <circle cx="${width * 0.65}" cy="${height * 0.38}" r="2.5" fill="#fef08a" filter="url(#glowFilter)" />
-      <circle cx="${width * 0.42}" cy="${height * 0.28}" r="4" fill="#38bdf8" filter="url(#glowFilter)" />
+      <radialGradient id="scifiGlow" cx="50%" cy="35%" r="60%">
+        <stop offset="0%" stop-color="#0284c7" stop-opacity="0.35" />
+        <stop offset="60%" stop-color="#0369a1" stop-opacity="0.1" />
+        <stop offset="100%" stop-color="#020617" stop-opacity="0" />
+      </radialGradient>
+      <rect width="${width}" height="${height}" fill="url(#scifiGlow)" />
+      <!-- Subtle cosmic starlight dust -->
+      <circle cx="${width * 0.35}" cy="${height * 0.25}" r="2" fill="#ffffff" opacity="0.6" />
+      <circle cx="${width * 0.65}" cy="${height * 0.3}" r="1.5" fill="#ffffff" opacity="0.5" />
+      <circle cx="${width * 0.5}" cy="${height * 0.2}" r="2.5" fill="#38bdf8" opacity="0.7" />
     `;
-  } else if (isParlourOrMansion) {
+  } else if (isVault) {
+    // High-tech stealth ambient glow - smooth gradient, no top/bottom slabs
     environmentElements = `
-      <!-- Ornate Banquet Arch & Damask Wall Framing -->
-      <path d="M${width * 0.1} ${height * 0.15} Q${width * 0.5} ${height * 0.05} ${width * 0.9} ${height * 0.15} L${width * 0.9} ${height} L${width * 0.1} ${height} Z" fill="#292524" opacity="0.4" />
-      <!-- Gold Dusted Chandelier in Center Ceiling -->
-      <path d="M${width * 0.5} 0 L${width * 0.5} ${height * 0.18}" stroke="#ca8a04" stroke-width="4" />
-      <ellipse cx="${width * 0.5}" cy="${height * 0.18}" rx="${width * 0.22}" ry="18" fill="none" stroke="#facc15" stroke-width="6" filter="url(#glowFilter)" opacity="0.85" />
-      <circle cx="${width * 0.5}" cy="${height * 0.18}" r="22" fill="#fef08a" opacity="0.3" filter="url(#glowFilter)" />
-      <circle cx="${width * 0.38}" cy="${height * 0.2}" r="8" fill="#fde047" opacity="0.8" />
-      <circle cx="${width * 0.62}" cy="${height * 0.2}" r="8" fill="#fde047" opacity="0.8" />
-      <!-- Heavy Mahogany Banquet Table -->
-      <polygon points="${width * 0.05},${height * 0.75} ${width * 0.95},${height * 0.75} ${width},${height * 0.9} 0,${height * 0.9}" fill="#451a03" stroke="#78350f" stroke-width="4" opacity="0.9" />
-      <!-- Crystal Decanter & Champagne Goblets on Table -->
-      <rect x="${width * 0.47}" y="${height * 0.7}" width="26" height="42" rx="6" fill="#fef08a" opacity="0.6" filter="url(#glowFilter)" />
+      <radialGradient id="vaultGlow" cx="50%" cy="40%" r="65%">
+        <stop offset="0%" stop-color="#059669" stop-opacity="0.25" />
+        <stop offset="70%" stop-color="#022c22" stop-opacity="0.08" />
+        <stop offset="100%" stop-color="#021814" stop-opacity="0" />
+      </radialGradient>
+      <rect width="${width}" height="${height}" fill="url(#vaultGlow)" />
+    `;
+  } else if (isHorror) {
+    // Dramatic gothic vignette glow - mood lighting, no geometric window arches or floor lines
+    environmentElements = `
+      <radialGradient id="horrorGlow" cx="50%" cy="30%" r="60%">
+        <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.3" />
+        <stop offset="60%" stop-color="#3b0764" stop-opacity="0.1" />
+        <stop offset="100%" stop-color="#090514" stop-opacity="0" />
+      </radialGradient>
+      <rect width="${width}" height="${height}" fill="url(#horrorGlow)" />
+    `;
+  } else if (isCyber) {
+    // Neon noir atmospheric aura - soft color washes, no rectangular signs or floor puddles
+    environmentElements = `
+      <radialGradient id="cyberGlow1" cx="30%" cy="35%" r="50%">
+        <stop offset="0%" stop-color="#ec4899" stop-opacity="0.25" />
+        <stop offset="100%" stop-color="#0a0a1a" stop-opacity="0" />
+      </radialGradient>
+      <radialGradient id="cyberGlow2" cx="70%" cy="40%" r="50%">
+        <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.25" />
+        <stop offset="100%" stop-color="#0a0a1a" stop-opacity="0" />
+      </radialGradient>
+      <rect width="${width}" height="${height}" fill="url(#cyberGlow1)" />
+      <rect width="${width}" height="${height}" fill="url(#cyberGlow2)" />
     `;
   } else {
+    // Opulent Ballroom / Lagos Manor - warm golden cinematic ambient spotlight, NO top chandelier or bottom floor line
     environmentElements = `
-      <!-- High-Tech / Architectural Perspective Grid -->
-      <line x1="0" y1="${height * 0.7}" x2="${width}" y2="${height * 0.7}" stroke="${ambientGlow}" stroke-width="2" opacity="0.4" />
-      <line x1="${width * 0.2}" y1="0" x2="${width * 0.2}" y2="${height}" stroke="#334155" stroke-width="6" opacity="0.3" />
-      <line x1="${width * 0.8}" y1="0" x2="${width * 0.8}" y2="${height}" stroke="#334155" stroke-width="6" opacity="0.3" />
-      <circle cx="${width * 0.5}" cy="${height * 0.35}" r="${width * 0.25}" fill="${ambientGlow}" opacity="0.08" filter="url(#glowFilter)" />
+      <radialGradient id="ballroomGlow" cx="50%" cy="38%" r="65%">
+        <stop offset="0%" stop-color="#d97706" stop-opacity="0.28" />
+        <stop offset="50%" stop-color="#78350f" stop-opacity="0.12" />
+        <stop offset="100%" stop-color="#1c1917" stop-opacity="0" />
+      </radialGradient>
+      <rect width="${width}" height="${height}" fill="url(#ballroomGlow)" />
+      <!-- Subtle warm golden bokeh points for ambiance (soft, floating, non-geometric) -->
+      <circle cx="${width * 0.42}" cy="${height * 0.32}" r="14" fill="#fef08a" opacity="0.12" filter="url(#glowFilter)" />
+      <circle cx="${width * 0.58}" cy="${height * 0.36}" r="18" fill="#fef08a" opacity="0.1" filter="url(#glowFilter)" />
+      <circle cx="${width * 0.5}" cy="${height * 0.45}" r="22" fill="#fde047" opacity="0.08" filter="url(#glowFilter)" />
     `;
   }
 
-  // Generate character figures physically positioned and acting inside the room
+  // --- 2. ACTORS / CHARACTERS (NO GEOMETRIC SHAPES TRYING TO PORTRAY HUMANS) ---
+  // When real user photos are uploaded, we present a clean photographic badge.
+  // We NEVER draw stick figures, trapezoid torsos, or geometric shapes portraying human bodies.
   let characterFigures = '';
-  const numChars = Math.min(characterBeats.length, 4);
 
-  characterBeats.slice(0, 4).forEach((char, idx) => {
-    // Distribute characters across the scene perspective
-    const xPos = numChars === 1
-      ? width * 0.5
-      : width * (0.22 + (idx / (numChars - 1 || 1)) * 0.56);
-    const yBase = height * 0.78;
-    const figureScale = idx % 2 === 0 ? 1.05 : 0.95;
-    const isSpeaking = idx === 0;
+  const safeBeats = Array.isArray(characterBeats) && characterBeats.length > 0
+    ? characterBeats
+    : [];
 
-    // Check action type for dynamic kinetic posture
-    const actionText = (char.action || '').toLowerCase();
-    const isCombat = /fight|punch|strike|attack|clash|weapon|gun|knife/.test(actionText);
-    const isCrawlingOrCrouching = /crawl|crouch|duck|hide|under/.test(actionText);
-    const isPoundingOrSlamming = /pound|slam|bang|hit|strike|fist/.test(actionText);
-    const isCheeringOrToasting = /toast|cheer|raise|drink|celebrat/.test(actionText);
-
-    let armPath = '';
-    if (isCombat) {
-      // Dynamic combat stance with weapon/fist thrust forward
-      armPath = `
-        <path d="M${xPos - 30} ${yBase - 150} Q${xPos - 80} ${yBase - 180} ${xPos - 110} ${yBase - 160}" stroke="#0f172a" stroke-width="18" stroke-linecap="round" />
-        <path d="M${xPos + 30} ${yBase - 150} Q${xPos + 70} ${yBase - 190} ${xPos + 90} ${yBase - 220}" stroke="#0f172a" stroke-width="18" stroke-linecap="round" />
-      `;
-    } else if (isPoundingOrSlamming) {
-      // Arm raised and slamming down onto table/console
-      armPath = `
-        <path d="M${xPos + 25} ${yBase - 150} Q${xPos + 60} ${yBase - 230} ${xPos + 40} ${yBase - 260}" stroke="#0f172a" stroke-width="18" stroke-linecap="round" />
-        <path d="M${xPos - 25} ${yBase - 150} Q${xPos - 50} ${yBase - 110} ${xPos - 60} ${yBase - 80}" stroke="#0f172a" stroke-width="18" stroke-linecap="round" />
-      `;
-    } else if (isCheeringOrToasting) {
-      // Raised goblet/glass
-      armPath = `
-        <path d="M${xPos + 25} ${yBase - 150} Q${xPos + 65} ${yBase - 210} ${xPos + 75} ${yBase - 240}" stroke="#0f172a" stroke-width="16" stroke-linecap="round" />
-        <polygon points="${xPos + 70},${yBase - 265} ${xPos + 86},${yBase - 265} ${xPos + 78},${yBase - 245}" fill="#facc15" filter="url(#glowFilter)" />
-      `;
-    } else if (isCrawlingOrCrouching) {
-      // Crouched stance
-      armPath = `
-        <path d="M${xPos - 40} ${yBase - 100} Q${xPos - 70} ${yBase - 50} ${xPos - 90} ${yBase - 20}" stroke="#0f172a" stroke-width="16" stroke-linecap="round" />
-      `;
-    } else {
-      // Dramatic cinematic standing dialogue posture
-      armPath = `
-        <path d="M${xPos - 25} ${yBase - 150} Q${xPos - 50} ${yBase - 110} ${xPos - 40} ${yBase - 70}" stroke="#0f172a" stroke-width="16" stroke-linecap="round" />
-        <path d="M${xPos + 25} ${yBase - 150} Q${xPos + 55} ${yBase - 130} ${xPos + 65} ${yBase - 110}" stroke="#0f172a" stroke-width="16" stroke-linecap="round" />
+  safeBeats.forEach((char, idx) => {
+    if (!char) return;
+    const photoUrl = customPortraits[char.player.toLowerCase()];
+    if (photoUrl && photoUrl.startsWith('data:image')) {
+      const xPos = width * (0.2 + (idx / Math.max(safeBeats.length - 1, 1)) * 0.6);
+      const yPos = height * 0.45;
+      characterFigures += `
+        <!-- Custom Real Photo Likeness Badge for ${escapeSvg(char.player)} -->
+        <g id="char_photo_${idx}" transform="translate(${xPos - 36}, ${yPos - 36})" filter="url(#dropShadow)">
+          <circle cx="36" cy="36" r="36" fill="#000000" stroke="${accentColor}" stroke-width="3" />
+          <clipPath id="avatarClip_${idx}">
+            <circle cx="36" cy="36" r="34" />
+          </clipPath>
+          <image href="${photoUrl}" x="2" y="2" width="68" height="68" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip_${idx})" />
+        </g>
       `;
     }
-
-    // Costume color accent from wardrobe
-    const wardrobeLower = (char.wardrobe || '').toLowerCase();
-    let costumeColor = '#1e293b';
-    let trimColor = ambientGlow;
-    if (wardrobeLower.includes('blue') || wardrobeLower.includes('agbada')) {
-      costumeColor = '#1e1b4b';
-      trimColor = '#facc15';
-    } else if (wardrobeLower.includes('green') || wardrobeLower.includes('emerald')) {
-      costumeColor = '#064e3b';
-      trimColor = '#34d399';
-    } else if (wardrobeLower.includes('red') || wardrobeLower.includes('crimson')) {
-      costumeColor = '#7f1d1d';
-      trimColor = '#fbbf24';
-    } else if (wardrobeLower.includes('charcoal') || wardrobeLower.includes('suit') || wardrobeLower.includes('tuxedo')) {
-      costumeColor = '#18181b';
-      trimColor = '#94a3b8';
-    }
-
-    const yHead = isCrawlingOrCrouching ? yBase - 120 : yBase - 220;
-    const bodyHeight = isCrawlingOrCrouching ? 100 : 180;
-
-    characterFigures += `
-      <!-- Character: ${char.player} as ${char.role} -->
-      <g filter="url(#dropShadow)" opacity="${isSpeaking ? '1.0' : '0.88'}">
-        <!-- Cast Rim Light Aura -->
-        <ellipse cx="${xPos}" cy="${yHead + 20}" rx="48" ry="58" fill="${trimColor}" opacity="0.18" filter="url(#glowFilter)" />
-
-        <!-- Limbs & Silhouette Body -->
-        ${armPath}
-
-        <!-- Torso / Locked Wardrobe Coat / Outfit -->
-        <path d="M${xPos - 38} ${yHead + 45} L${xPos + 38} ${yHead + 45} L${xPos + 48} ${yHead + bodyHeight} L${xPos - 48} ${yHead + bodyHeight} Z" fill="${costumeColor}" stroke="${trimColor}" stroke-width="2" />
-
-        <!-- Head / Profile -->
-        <circle cx="${xPos}" cy="${yHead}" r="26" fill="#1c1917" stroke="${trimColor}" stroke-width="1.5" />
-        <!-- Dramatic Rim Lighting on Face & Hair -->
-        <path d="M${xPos - 20} ${yHead - 22} Q${xPos} ${yHead - 30} ${xPos + 22} ${yHead - 20}" stroke="${ambientGlow}" stroke-width="4" fill="none" opacity="0.8" />
-      </g>
-    `;
   });
 
+  // Full SVG Assembly with Halftone pattern & Comic Inks (Pure visual illustration with zero overlapping text)
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
     <defs>
-      <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${bgTop}" />
-        <stop offset="60%" stop-color="${bgMid}" />
-        <stop offset="100%" stop-color="${bgBottom}" />
+      <!-- Atmospheric Wall Gradient -->
+      <linearGradient id="wallGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${wallGrad1}" />
+        <stop offset="100%" stop-color="${wallGrad2}" />
       </linearGradient>
+
+      <!-- Floor Gradient -->
+      <linearGradient id="floorGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${floorColor}" />
+        <stop offset="100%" stop-color="#000000" />
+      </linearGradient>
+
+      <!-- Glow filter for dramatic lighting -->
       <filter id="glowFilter" x="-30%" y="-30%" width="160%" height="160%">
-        <feGaussianBlur stdDeviation="10" result="blur" />
+        <feGaussianBlur stdDeviation="8" result="blur" />
         <feComposite in="SourceGraphic" in2="blur" operator="over" />
       </filter>
+
+      <!-- Comic Book Deep Ink Drop Shadow -->
       <filter id="dropShadow" x="-20%" y="-20%" width="140%" height="140%">
-        <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.85"/>
+        <feDropShadow dx="3" dy="5" stdDeviation="6" flood-color="#000000" flood-opacity="0.9" />
       </filter>
+
+      <!-- Halftone Comic Ben-Day Dot Pattern Texture -->
+      <pattern id="benDayDots" x="0" y="0" width="12" height="12" patternUnits="userSpaceOnUse">
+        <circle cx="2.5" cy="2.5" r="1.5" fill="#ffffff" opacity="0.05" />
+      </pattern>
     </defs>
 
-    <!-- Background Wallpaper / Architecture Grid -->
-    <rect width="${width}" height="${height}" fill="url(#skyGrad)" />
+    <!-- 1. Background Wall Architecture & Ambient Lighting -->
+    <rect width="${width}" height="${height}" fill="url(#wallGrad)" />
+    <!-- Halftone Texture Overlay -->
+    <rect width="${width}" height="${height}" fill="url(#benDayDots)" pointer-events="none" />
 
-    <!-- Scene Heading Environmental Architecture -->
+    <!-- 2. Scene Heading Architecture & Props -->
     ${environmentElements}
 
-    <!-- Characters Physically Inside the Scene Interacting in Action -->
+    <!-- 3. Characters Physically Positioned & Interacting inside the Room -->
     ${characterFigures}
 
-    <!-- Cinematic Vignette & Atmospheric Contrast Grading -->
-    <rect width="${width}" height="${height}" fill="black" opacity="0.25" />
-    <path d="M0 0 L${width} 0 L${width} ${height * 0.15} L0 ${height * 0.15} Z" fill="black" opacity="0.4" />
-    <path d="M0 ${height * 0.85} L${width} ${height * 0.85} L${width} ${height} L0 ${height} Z" fill="black" opacity="0.6" />
+    <!-- Borderless visual frame -->
   </svg>`;
 
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 /**
@@ -615,8 +650,8 @@ export function buildContinuityPromptBlock(
 The characters in this scene MUST retain their EXACT identical facial identity, hairstyle, locked wardrobe, and signature props as established in Act 1:
 ${characterDescriptions}
 
-=== GRAPHIC NOVEL SCENE ACTION (CHARACTERS IN ACTION) ===
+=== LIVE-ACTION CINEMATIC SCENE ACTION ===
 ${actionDescription}
-IMPORTANT: Do NOT render characters as separate portrait headshots or UI floating icons. The characters MUST be physically rendered INSIDE the scene illustration itself, interacting with one another and the environment, fully drawn into the environment just like a cinematic graphic novel or comic book panel.
+IMPORTANT: Characters must be physically staged inside the realistic location, interacting with one another with natural postures and authentic lighting. Do NOT render drawings, cartoons, comic panels, or illustrations. Pure photorealistic feature film still.
 `.trim();
 }

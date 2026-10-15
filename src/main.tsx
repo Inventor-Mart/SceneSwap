@@ -3,6 +3,8 @@ import App from './App.tsx';
 import './index.css';
 import { registerSW } from 'virtual:pwa-register';
 
+import { ErrorBoundary } from './components/ErrorBoundary.tsx';
+
 // Register PWA service worker with auto-update
 registerSW({
   immediate: true,
@@ -14,4 +16,8 @@ registerSW({
   },
 });
 
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
+);

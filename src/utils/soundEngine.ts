@@ -11,16 +11,20 @@ class SoundEngine {
 
   private getContext(): AudioContext | null {
     if (typeof window === 'undefined') return null;
-    if (!this.ctx) {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioCtx) {
-        this.ctx = new AudioCtx();
+    try {
+      if (!this.ctx) {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          this.ctx = new AudioCtx();
+        }
       }
+      if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
+      return this.ctx;
+    } catch {
+      return null;
     }
-    if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
-    }
-    return this.ctx;
   }
 
   public toggleMute(): boolean {
@@ -43,101 +47,105 @@ class SoundEngine {
   // 1. Vine Boom / Dramatic Sub-Bass Drop
   public playVineBoom() {
     if (this.isMuted) return;
-    const ctx = this.getContext();
-    if (!ctx) return;
+    try {
+      const ctx = this.getContext();
+      if (!ctx) return;
 
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    const filter = ctx.createBiquadFilter();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
 
-    osc.type = 'sine';
-    // Frequency drops from 140Hz rapidly down to 30Hz
-    osc.frequency.setValueAtTime(140, now);
-    osc.frequency.exponentialRampToValueAtTime(32, now + 0.45);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(140, now);
+      osc.frequency.exponentialRampToValueAtTime(32, now + 0.45);
 
-    // Lowpass filter for punchy thud
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(260, now);
-    filter.frequency.exponentialRampToValueAtTime(60, now + 0.5);
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(260, now);
+      filter.frequency.exponentialRampToValueAtTime(60, now + 0.5);
 
-    // Distortion wave shaper
-    const distortion = ctx.createWaveShaper();
-    const curve = new Float32Array(256);
-    for (let i = 0; i < 256; ++i) {
-      const x = (i * 2) / 256 - 1;
-      curve[i] = ((Math.PI + 3) * x) / (Math.PI + 3 * Math.abs(x));
+      const distortion = ctx.createWaveShaper();
+      const curve = new Float32Array(256);
+      for (let i = 0; i < 256; ++i) {
+        const x = (i * 2) / 256 - 1;
+        curve[i] = ((Math.PI + 3) * x) / (Math.PI + 3 * Math.abs(x));
+      }
+      distortion.curve = curve;
+
+      gain.gain.setValueAtTime(0.9 * this.volume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+
+      const bufferSize = ctx.sampleRate * 0.1;
+      const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        output[i] = Math.random() * 2 - 1;
+      }
+      const noise = ctx.createBufferSource();
+      noise.buffer = noiseBuffer;
+      const noiseFilter = ctx.createBiquadFilter();
+      noiseFilter.type = 'bandpass';
+      noiseFilter.frequency.setValueAtTime(180, now);
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.6 * this.volume, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+      noise.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(ctx.destination);
+      noise.start(now);
+
+      osc.connect(distortion);
+      distortion.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.85);
+    } catch (e) {
+      console.warn('playVineBoom error:', e);
     }
-    distortion.curve = curve;
-
-    gain.gain.setValueAtTime(0.9 * this.volume, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
-
-    // Noise burst at head for impact punch
-    const bufferSize = ctx.sampleRate * 0.1;
-    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const output = noiseBuffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      output[i] = Math.random() * 2 - 1;
-    }
-    const noise = ctx.createBufferSource();
-    noise.buffer = noiseBuffer;
-    const noiseFilter = ctx.createBiquadFilter();
-    noiseFilter.type = 'bandpass';
-    noiseFilter.frequency.setValueAtTime(180, now);
-    const noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.6 * this.volume, now);
-    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-
-    noise.connect(noiseFilter);
-    noiseFilter.connect(noiseGain);
-    noiseGain.connect(ctx.destination);
-    noise.start(now);
-
-    osc.connect(distortion);
-    distortion.connect(filter);
-    filter.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start(now);
-    osc.stop(now + 0.85);
   }
 
   // 2. Suspense Sting ("Dun Dun Dun!")
   public playSuspenseSting() {
     if (this.isMuted) return;
-    const ctx = this.getContext();
-    if (!ctx) return;
+    try {
+      const ctx = this.getContext();
+      if (!ctx) return;
 
-    const chords = [
-      { freq: 220, start: 0, dur: 0.18 }, // A3
-      { freq: 207.65, start: 0.22, dur: 0.18 }, // G#3
-      { freq: 196, start: 0.44, dur: 0.65 }, // G3 (long dramatic resolve)
-    ];
+      const chords = [
+        { freq: 220, start: 0, dur: 0.18 },
+        { freq: 207.65, start: 0.22, dur: 0.18 },
+        { freq: 196, start: 0.44, dur: 0.65 },
+      ];
 
-    chords.forEach(({ freq, start, dur }) => {
-      const now = ctx.currentTime + start;
-      const osc1 = ctx.createOscillator();
-      const osc2 = ctx.createOscillator();
-      const gain = ctx.createGain();
+      chords.forEach(({ freq, start, dur }) => {
+        const now = ctx.currentTime + start;
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain = ctx.createGain();
 
-      osc1.type = 'sawtooth';
-      osc2.type = 'square';
-      osc1.frequency.setValueAtTime(freq, now);
-      osc2.frequency.setValueAtTime(freq * 1.005, now); // slight detune for cinematic grit
+        osc1.type = 'sawtooth';
+        osc2.type = 'square';
+        osc1.frequency.setValueAtTime(freq, now);
+        osc2.frequency.setValueAtTime(freq * 1.005, now);
 
-      gain.gain.setValueAtTime(0.28 * this.volume, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+        gain.gain.setValueAtTime(0.28 * this.volume, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
 
-      osc1.connect(gain);
-      osc2.connect(gain);
-      gain.connect(ctx.destination);
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(ctx.destination);
 
-      osc1.start(now);
-      osc2.start(now);
-      osc1.stop(now + dur);
-      osc2.stop(now + dur);
-    });
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + dur);
+        osc2.stop(now + dur);
+      });
+    } catch (e) {
+      console.warn('playSuspenseSting error:', e);
+    }
   }
 
   // 3. Record Scratch (Awkward / Comedic Twist)

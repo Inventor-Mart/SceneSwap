@@ -43,10 +43,15 @@ import {
 import { soundEngine } from './utils/soundEngine';
 import { CinematicSceneStage } from './components/CinematicSceneStage';
 import { StudioScriptPortraitView } from './components/StudioScriptPortraitView';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { generateClientFallbackChapter } from './utils/chapterGenerator';
 import { AuthModal } from './components/AuthModal';
 import { ServicesLaunchHubModal } from './components/ServicesLaunchHubModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { PWAInstallButton } from './components/PWAInstallButton';
+import { LandingPage } from './components/LandingPage';
+import { SubscriptionModal, type SubscriptionTier } from './components/SubscriptionModal';
+import { AndroidApkModal } from './components/AndroidApkModal';
 import {
   auth,
   onAuthStateChanged,
@@ -233,6 +238,7 @@ export default function App() {
   const [activeScriptMode, setActiveScriptMode] = useState<'comic' | 'studio'>('comic');
   const [playerCustomPhotos, setPlayerCustomPhotos] = useState<Record<string, string>>(() => getStoredCustomAvatars());
   const [isSoundMuted, setIsSoundMuted] = useState<boolean>(() => soundEngine.getMuted());
+  const [currentView, setCurrentView] = useState<'landing' | 'lobby'>('landing');
 
   // App UI & Async States
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -240,12 +246,15 @@ export default function App() {
   const [copiedScript, setCopiedScript] = useState<boolean>(false);
   const [isDevMode, setIsDevMode] = useState<boolean>(false);
   const [isDirectorPro, setIsDirectorPro] = useState<boolean>(false);
+  const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>('free');
+  const [campaignActCount, setCampaignActCount] = useState<3 | 5>(3);
 
   // Modals & Popups
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isServicesModalOpen, setIsServicesModalOpen] = useState<boolean>(false);
   const [isSupportModalOpen, setIsSupportModalOpen] = useState<boolean>(false);
   const [isDirectorPassModalOpen, setIsDirectorPassModalOpen] = useState<boolean>(false);
+  const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
   const [supportMessage, setSupportMessage] = useState<string>('');
   const [supportCategory, setSupportCategory] = useState<string>('Feedback');
   const [supportSending, setSupportSending] = useState<boolean>(false);
@@ -411,50 +420,72 @@ export default function App() {
 
   // Start Party Shoot (Act 1 Generation)
   async function handleStartPartyShoot(e?: FormEvent) {
-    if (e) e.preventDefault();
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
     if (isProcessing || partyPlayers.length < 2) return;
 
     setErrorMessage(null);
     setIsProcessing(true);
     soundEngine.playSuspenseSting();
 
+    const cleanPlayerNames = (partyPlayers || [])
+      .map((p: any) => (typeof p === 'string' ? p : p?.name || String(p || '')).trim())
+      .filter(Boolean);
+    const safePlayerList = cleanPlayerNames.length >= 2 ? cleanPlayerNames : ['Amaka', 'Tunde', 'Chioma'];
+
+    let chapterData: SceneSwapChapterResult;
     try {
       const res = await fetch('/api/sceneswap/chapter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          players: partyPlayers,
+          players: safePlayerList,
           genre: selectedGenre,
           tone: selectedTone,
-          wildcardHook: wildcardHook.trim(),
+          wildcardHook: String(wildcardHook || '').trim(),
           chapterNumber: 1,
         }),
       });
 
-      if (!res.ok) throw new Error('SceneSwap shoot failed');
-      const data: SceneSwapChapterResult = await res.json();
+      if (!res.ok) {
+        throw new Error(`SceneSwap shoot failed with status ${res.status}`);
+      }
+      chapterData = await res.json();
+    } catch (fetchErr) {
+      console.warn('API generation encountered an issue, seamlessly engaging director fallback engine:', fetchErr);
+      chapterData = generateClientFallbackChapter({
+        players: safePlayerList,
+        genre: selectedGenre,
+        tone: selectedTone,
+        wildcardHook: String(wildcardHook || '').trim(),
+        chapterNumber: 1,
+      });
+    }
 
+    try {
       clearStoredVisualBible();
-      lockOrGetCharacterVisualBible(data.cast, selectedGenre, playerCustomPhotos);
+      lockOrGetCharacterVisualBible(chapterData.cast, selectedGenre, playerCustomPhotos);
 
-      setActiveChapter(data);
+      setActiveChapter(chapterData);
       setChapterHistory([]);
       setCurrentLineIndex(0);
       setVoteCounts({ A: 0, B: 0, C: 0 });
       setSelectedVoteId(null);
-      soundEngine.playAudioCueForText(data.audio_cue);
+      soundEngine.playAudioCueForText(chapterData.audio_cue);
 
       if (currentUser) {
         saveUserSceneSwapData(currentUser.uid, {
-          activeChapter: data,
-          partyPlayers,
+          activeChapter: chapterData,
+          partyPlayers: safePlayerList,
           selectedGenre,
           premiseSeed: wildcardHook,
           updatedAt: new Date().toISOString(),
         }).catch(() => {});
       }
-    } catch {
-      setErrorMessage('The scene director encountered a blackout. Please verify your connection and try again.');
+    } catch (err: any) {
+      console.error('Error initializing scene stage:', err);
+      setErrorMessage('The director stage encountered a brief glitch. Tap Start Party Shoot to retry.');
     } finally {
       setIsProcessing(false);
     }
@@ -479,18 +510,24 @@ export default function App() {
     setErrorMessage(null);
     soundEngine.playVineBoom();
 
-    try {
-      const newHistoryItem = {
-        chapter: activeChapter,
-        chosenChoice: chosenOption,
-      };
-      const updatedHistory = [...chapterHistory, newHistoryItem];
+    const cleanPlayerNames = (partyPlayers || [])
+      .map((p: any) => (typeof p === 'string' ? p : p?.name || String(p || '')).trim())
+      .filter(Boolean);
+    const safePlayerList = cleanPlayerNames.length >= 2 ? cleanPlayerNames : ['Amaka', 'Tunde', 'Chioma'];
 
+    const newHistoryItem = {
+      chapter: activeChapter,
+      chosenChoice: chosenOption,
+    };
+    const updatedHistory = [...chapterHistory, newHistoryItem];
+
+    let nextChapterData: SceneSwapChapterResult;
+    try {
       const res = await fetch('/api/sceneswap/chapter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          players: partyPlayers,
+          players: safePlayerList,
           genre: selectedGenre,
           tone: selectedTone,
           chapterNumber: nextChapterNumber,
@@ -504,8 +541,19 @@ export default function App() {
       });
 
       if (!res.ok) throw new Error('Branch generation failed');
-      const nextChapterData: SceneSwapChapterResult = await res.json();
+      nextChapterData = await res.json();
+    } catch (branchErr) {
+      console.warn('Branch generation API failed, engaging fallback branch:', branchErr);
+      nextChapterData = generateClientFallbackChapter({
+        players: safePlayerList,
+        genre: selectedGenre,
+        tone: selectedTone,
+        chapterNumber: nextChapterNumber,
+        chosenChoice: chosenOption,
+      });
+    }
 
+    try {
       setChapterHistory(updatedHistory);
       setActiveChapter(nextChapterData);
       setCurrentLineIndex(0);
@@ -524,7 +572,8 @@ export default function App() {
           updatedAt: new Date().toISOString(),
         }).catch(() => {});
       }
-    } catch {
+    } catch (err: any) {
+      console.error('Error applying next branch:', err);
       setErrorMessage('Failed to roll next scene branch. Please try again.');
     } finally {
       setIsBranchingChapter(false);
@@ -615,15 +664,36 @@ export default function App() {
     }
   }
 
-  // VIP Director Pass Mock Activation
-  function handleActivateDirectorPass() {
-    setIsDirectorPro(true);
+  // VIP Subscriptions & Pass Activation
+  function handleActivateTier(tier: SubscriptionTier) {
+    const isPro = tier !== 'free';
+    setIsDirectorPro(isPro);
+    setSubscriptionTier(tier);
     setIsDirectorPassModalOpen(false);
-    soundEngine.playApplause();
-    setCloudNotice('VIP Director Pass Activated! 🎬');
-    setTimeout(() => setCloudNotice(null), 4000);
-    if (currentUser) {
-      saveUserSceneSwapData(currentUser.uid, { isDirectorPro: true }).catch(() => {});
+
+    if (isPro) {
+      soundEngine.playApplause();
+      setCloudNotice(
+        tier === 'creator_studio'
+          ? '🎉 Creator Studio Pro Activated! Screenplay & Video Tools Unlocked!'
+          : '🎉 VIP Director Pass Activated! 5-Act Epic Mode & Unlimited Visuals Unlocked!'
+      );
+      setTimeout(() => setCloudNotice(null), 4500);
+      if (currentUser) {
+        saveUserSceneSwapData(currentUser.uid, {
+          isDirectorPro: true,
+          subscriptionTier: tier,
+        }).catch(() => {});
+      }
+    } else {
+      setCloudNotice('Switched to Free Host Plan.');
+      setTimeout(() => setCloudNotice(null), 3000);
+      if (currentUser) {
+        saveUserSceneSwapData(currentUser.uid, {
+          isDirectorPro: false,
+          subscriptionTier: 'free',
+        }).catch(() => {});
+      }
     }
   }
 
@@ -655,10 +725,15 @@ export default function App() {
                   v2.0
                 </span>
                 {isDirectorPro && (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/20 px-2 py-0.5 text-[9px] font-extrabold text-amber-300 uppercase">
+                  <button
+                    type="button"
+                    onClick={() => setIsDirectorPassModalOpen(true)}
+                    className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/20 px-2 py-0.5 text-[9px] font-extrabold text-amber-300 uppercase hover:bg-amber-500/30 transition cursor-pointer"
+                    title="Manage Subscription"
+                  >
                     <Crown className="h-2.5 w-2.5 text-amber-400" />
-                    VIP Director
-                  </span>
+                    {subscriptionTier === 'creator_studio' ? 'Studio Pro' : 'VIP Director'}
+                  </button>
                 )}
               </div>
               <p className="text-[10px] text-slate-400 hidden sm:block">
@@ -669,6 +744,39 @@ export default function App() {
 
           {/* Right Header Navigation & Actions */}
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* View Switcher: Overview vs Party Studio */}
+            <div className="flex rounded-lg bg-black/60 p-0.5 border border-white/15 backdrop-blur-md">
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentView('landing');
+                  soundEngine.playDialogueBlip(1.0);
+                }}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold transition ${
+                  currentView === 'landing' && !activeChapter
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>Overview</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentView('lobby');
+                  soundEngine.playDialogueBlip(1.0);
+                }}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold transition ${
+                  currentView === 'lobby' || activeChapter
+                    ? 'bg-amber-400 text-slate-950 font-black shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Clapperboard className="h-3 w-3" />
+                <span>Party Studio</span>
+              </button>
+            </div>
+
             {/* Audio Toggle */}
             <button
               type="button"
@@ -697,15 +805,25 @@ export default function App() {
               <span>{currentUser ? currentUser.displayName || 'Cloud Sync' : 'Login & Sync'}</span>
             </button>
 
-            {/* VIP Pass Upgrade Button (if not yet Pro) */}
-            {!isDirectorPro && (
+            {/* VIP Pass & Subscriptions Button */}
+            {!isDirectorPro ? (
               <button
                 type="button"
                 onClick={() => setIsDirectorPassModalOpen(true)}
-                className="hidden md:flex items-center gap-1 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 px-2.5 py-1 text-[10px] font-bold text-slate-950 hover:brightness-110 transition shadow-sm active:scale-95"
+                className="flex items-center gap-1 rounded-lg bg-gradient-to-r from-amber-500 via-orange-500 to-amber-400 px-2.5 py-1 text-[10px] font-extrabold text-slate-950 hover:brightness-110 transition shadow-sm active:scale-95 cursor-pointer"
               >
-                <Crown className="h-3 w-3" />
-                <span>Director Pass</span>
+                <Crown className="h-3 w-3 text-slate-950" />
+                <span>VIP Pass</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsDirectorPassModalOpen(true)}
+                className="flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-[10px] font-bold text-amber-300 hover:bg-amber-500/25 transition shadow-sm active:scale-95 cursor-pointer"
+                title="Manage Subscription"
+              >
+                <Crown className="h-3 w-3 text-amber-400" />
+                <span>My Plan</span>
               </button>
             )}
 
@@ -729,18 +847,17 @@ export default function App() {
               <Mail className="h-3.5 w-3.5" />
             </button>
 
-            {/* Direct Android APK Download Button */}
-            <a
-              href="https://github.com/Inventor-Mart/SceneSwap/releases/download/v1.0.0-apk/SceneSwap-Android7plus-v1.0.apk"
-              target="_blank"
-              rel="noopener noreferrer"
+            {/* Direct Android APK Modal Trigger */}
+            <button
+              type="button"
+              onClick={() => setIsApkModalOpen(true)}
               title="Download SceneSwap APK for Android (Android 7.0+)"
-              className="flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition-all shadow-sm"
+              className="flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition-all shadow-sm cursor-pointer"
             >
               <Smartphone className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Android APK</span>
               <Download className="h-3 w-3 opacity-75" />
-            </a>
+            </button>
 
             {/* PWA Install Button */}
             <PWAInstallButton />
@@ -849,70 +966,113 @@ export default function App() {
 
               {/* PRIMARY VIEWS: GRAPHIC NOVEL STAGE OR STUDIO SCRIPT VIEW */}
               <div className="flex-1 min-h-0">
-                {activeScriptMode === 'comic' ? (
-                  <CinematicSceneStage
-                    genre={activeChapter.genre}
-                    tone={activeChapter.tone}
-                    chapterNumber={activeChapter.chapter_number}
-                    chapterTitle={activeChapter.chapter_title}
-                    settingDescription={activeChapter.setting_description}
-                    audioCue={activeChapter.audio_cue}
-                    cast={activeChapter.cast}
-                    scriptLines={activeChapter.script_lines}
-                    plotChoices={activeChapter.plot_choices}
-                    isFinale={activeChapter.is_finale}
-                    finaleSummary={activeChapter.finale_summary}
-                    currentLineIndex={currentLineIndex}
-                    onLineChange={(idx) => setCurrentLineIndex(idx)}
-                    selectedVoteId={selectedVoteId}
-                    onSelectVote={(id) => {
-                      setSelectedVoteId(id);
-                      setVoteCounts((prev) => ({ ...prev, [id]: prev[id] + 1 }));
-                      soundEngine.playDialogueBlip(0.9);
-                    }}
-                    voteCounts={voteCounts}
-                    onLockInVoteAndBranch={handleLockInVoteAndBranch}
-                    isBranchingChapter={isBranchingChapter}
-                    onResetToLobby={handleResetPartyShoot}
-                    playerColorStyles={PLAYER_COLOR_STYLES}
-                    customPlayerPhotos={playerCustomPhotos}
-                    onUpdateCustomPhoto={handleUpdateCustomPhotoFromStage}
-                  />
-                ) : (
-                  <StudioScriptPortraitView
-                    genre={activeChapter.genre}
-                    tone={activeChapter.tone}
-                    chapterNumber={activeChapter.chapter_number}
-                    chapterTitle={activeChapter.chapter_title}
-                    settingDescription={activeChapter.setting_description}
-                    audioCue={activeChapter.audio_cue}
-                    cast={activeChapter.cast}
-                    scriptLines={activeChapter.script_lines}
-                    plotChoices={activeChapter.plot_choices}
-                    isFinale={activeChapter.is_finale}
-                    finaleSummary={activeChapter.finale_summary}
-                    currentLineIndex={currentLineIndex}
-                    onLineChange={(idx) => setCurrentLineIndex(idx)}
-                    selectedVoteId={selectedVoteId}
-                    onSelectVote={(id) => {
-                      setSelectedVoteId(id);
-                      setVoteCounts((prev) => ({ ...prev, [id]: prev[id] + 1 }));
-                      soundEngine.playDialogueBlip(0.9);
-                    }}
-                    voteCounts={voteCounts}
-                    onLockInVoteAndBranch={handleLockInVoteAndBranch}
-                    isBranchingChapter={isBranchingChapter}
-                    onResetToLobby={handleResetPartyShoot}
-                    playerColorStyles={PLAYER_COLOR_STYLES}
-                    customPlayerPhotos={playerCustomPhotos}
-                    onUpdateCustomPhoto={handleUpdateCustomPhotoFromStage}
-                  />
-                )}
+                <ErrorBoundary
+                  fallback={
+                    <div className="flex flex-col items-center justify-center p-8 text-center space-y-4 rounded-2xl border border-rose-500/40 bg-rose-950/40">
+                      <Clapperboard className="h-8 w-8 text-rose-400 animate-pulse" />
+                      <h3 className="text-sm font-bold text-white">Stage Visual Recovered</h3>
+                      <p className="text-xs text-slate-300 max-w-sm">The director stage caught a display hiccup. Tap below to refresh the scene view cleanly.</p>
+                      <button
+                        type="button"
+                        onClick={handleResetPartyShoot}
+                        className="rounded-xl bg-purple-600 px-4 py-2 text-xs font-bold text-white hover:bg-purple-500 transition"
+                      >
+                        Return to Lobby
+                      </button>
+                    </div>
+                  }
+                >
+                  {activeScriptMode === 'comic' ? (
+                    <CinematicSceneStage
+                      genre={activeChapter.genre}
+                      tone={activeChapter.tone}
+                      chapterNumber={activeChapter.chapter_number}
+                      chapterTitle={activeChapter.chapter_title}
+                      settingDescription={activeChapter.setting_description}
+                      audioCue={activeChapter.audio_cue}
+                      cast={activeChapter.cast}
+                      scriptLines={activeChapter.script_lines}
+                      plotChoices={activeChapter.plot_choices}
+                      isFinale={activeChapter.is_finale}
+                      finaleSummary={activeChapter.finale_summary}
+                      currentLineIndex={currentLineIndex}
+                      onLineChange={(idx) => setCurrentLineIndex(idx)}
+                      selectedVoteId={selectedVoteId}
+                      onSelectVote={(id) => {
+                        setSelectedVoteId(id);
+                        setVoteCounts((prev) => ({ ...prev, [id]: prev[id] + 1 }));
+                        soundEngine.playDialogueBlip(0.9);
+                      }}
+                      voteCounts={voteCounts}
+                      onLockInVoteAndBranch={handleLockInVoteAndBranch}
+                      isBranchingChapter={isBranchingChapter}
+                      onResetToLobby={handleResetPartyShoot}
+                      playerColorStyles={PLAYER_COLOR_STYLES}
+                      customPlayerPhotos={playerCustomPhotos}
+                      onUpdateCustomPhoto={handleUpdateCustomPhotoFromStage}
+                    />
+                  ) : (
+                    <StudioScriptPortraitView
+                      genre={activeChapter.genre}
+                      tone={activeChapter.tone}
+                      chapterNumber={activeChapter.chapter_number}
+                      chapterTitle={activeChapter.chapter_title}
+                      settingDescription={activeChapter.setting_description}
+                      audioCue={activeChapter.audio_cue}
+                      cast={activeChapter.cast}
+                      scriptLines={activeChapter.script_lines}
+                      plotChoices={activeChapter.plot_choices}
+                      isFinale={activeChapter.is_finale}
+                      finaleSummary={activeChapter.finale_summary}
+                      currentLineIndex={currentLineIndex}
+                      onLineChange={(idx) => setCurrentLineIndex(idx)}
+                      selectedVoteId={selectedVoteId}
+                      onSelectVote={(id) => {
+                        setSelectedVoteId(id);
+                        setVoteCounts((prev) => ({ ...prev, [id]: prev[id] + 1 }));
+                        soundEngine.playDialogueBlip(0.9);
+                      }}
+                      voteCounts={voteCounts}
+                      onLockInVoteAndBranch={handleLockInVoteAndBranch}
+                      isBranchingChapter={isBranchingChapter}
+                      onResetToLobby={handleResetPartyShoot}
+                      playerColorStyles={PLAYER_COLOR_STYLES}
+                      customPlayerPhotos={playerCustomPhotos}
+                      onUpdateCustomPhoto={handleUpdateCustomPhotoFromStage}
+                      isDirectorPro={isDirectorPro}
+                      onOpenSubscriptionModal={() => setIsDirectorPassModalOpen(true)}
+                    />
+                  )}
+                </ErrorBoundary>
               </div>
             </div>
+          ) : currentView === 'landing' ? (
+            /* LANDING PAGE */
+            <LandingPage
+              onStartParty={() => {
+                setCurrentView('lobby');
+                soundEngine.playDialogueBlip(1.1);
+              }}
+              onQuickDemo={() => handleStartPartyShoot()}
+              onOpenPass={() => setIsDirectorPassModalOpen(true)}
+            />
           ) : (
             /* PARTY LOBBY ENGINE */
-            <form className="flex flex-col gap-4 max-w-3xl mx-auto pb-8" onSubmit={handleStartPartyShoot}>
+            <div className="flex flex-col gap-4 max-w-3xl mx-auto pb-8 animate-in fade-in duration-200">
+              {/* Back to Landing Page Bar */}
+              <div className="flex items-center justify-between pb-1">
+                <button
+                  type="button"
+                  onClick={() => setCurrentView('landing')}
+                  className="flex items-center gap-1.5 text-xs text-purple-300 hover:text-white transition font-medium"
+                >
+                  <span>← Back to Welcome</span>
+                </button>
+                <span className="text-[11px] text-slate-500 font-mono">
+                  {partyPlayers.length} Players Casted
+                </span>
+              </div>
+
               {/* Hidden File Picker for Custom Player Avatars */}
               <input
                 type="file"
@@ -1111,6 +1271,81 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Campaign Scale & Act Count Selector */}
+              <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className={labelClass}>
+                    <Film className="h-3.5 w-3.5 text-amber-400" />
+                    Campaign Scale & Act Count
+                  </label>
+                  {isDirectorPro ? (
+                    <span className="flex items-center gap-1 text-[10px] font-extrabold text-amber-300">
+                      <Crown className="h-3 w-3 text-amber-400" /> VIP Unlocked
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsDirectorPassModalOpen(true)}
+                      className="text-[10px] font-bold text-amber-400 hover:text-amber-300 underline cursor-pointer"
+                    >
+                      View VIP Plans
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCampaignActCount(3);
+                      soundEngine.playDialogueBlip(1.0);
+                    }}
+                    className={`flex flex-col items-start p-3 rounded-xl border text-left transition cursor-pointer ${
+                      campaignActCount === 3
+                        ? 'border-purple-400 bg-purple-950/40 text-white ring-1 ring-purple-400/50'
+                        : 'border-white/10 bg-black/40 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-xs font-black text-white">Standard 3-Act Movie</span>
+                      <span className="text-[9px] font-bold uppercase rounded bg-white/10 px-1.5 py-0.2">Free</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 mt-1">
+                      Act 1 (Setup) → Act 2 (Crisis) → Act 3 (Finale)
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isDirectorPro) {
+                        setIsDirectorPassModalOpen(true);
+                      } else {
+                        setCampaignActCount(5);
+                        soundEngine.playDialogueBlip(1.2);
+                      }
+                    }}
+                    className={`flex flex-col items-start p-3 rounded-xl border text-left transition cursor-pointer relative overflow-hidden ${
+                      campaignActCount === 5
+                        ? 'border-amber-400 bg-amber-950/40 text-white ring-1 ring-amber-400/50'
+                        : 'border-amber-500/30 bg-amber-950/10 text-amber-200 hover:border-amber-400/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center gap-1.5">
+                        <Crown className="h-3.5 w-3.5 text-amber-400" />
+                        <span className="text-xs font-black text-white">5-Act Epic Campaign</span>
+                      </div>
+                      <span className="text-[9px] font-black uppercase rounded bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 px-1.5 py-0.2 shadow">
+                        VIP Pass
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-slate-300 mt-1">
+                      {isDirectorPro ? 'Midpoint Twist, Climax & Grand Epilogue' : 'Tap to unlock with VIP Director Pass'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
               {/* Tone & Vibe Selector */}
               <div>
                 <label htmlFor="toneSelect" className={labelClass}>
@@ -1219,14 +1454,15 @@ export default function App() {
 
               {/* Start Party Shoot CTA Button */}
               <button
-                type="submit"
+                type="button"
+                onClick={() => handleStartPartyShoot()}
                 disabled={partyPlayers.length < 2 || isProcessing}
-                className="mt-2 w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 px-5 py-4 text-sm font-black tracking-wide text-white shadow-[0_0_30px_rgba(168,85,247,0.45)] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
+                className="mt-2 w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 px-5 py-4 text-sm font-black tracking-wide text-white shadow-[0_0_30px_rgba(168,85,247,0.45)] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-40 cursor-pointer"
               >
                 <Clapperboard className="h-4 w-4" />
                 Start Party Shoot & Roll Act 1 ({partyPlayers.length} Players)
               </button>
-            </form>
+            </div>
           )}
         </main>
       </div>
@@ -1255,61 +1491,21 @@ export default function App() {
         }}
       />
 
-      {/* MODAL: VIP Director Pass */}
-      {isDirectorPassModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-md animate-in fade-in">
-          <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-amber-500/40 bg-slate-950 p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2">
-                <Crown className="h-5 w-5 text-amber-400" />
-                <h3 className="text-base font-extrabold text-white">
-                  SceneSwap VIP Director Pass
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsDirectorPassModalOpen(false)}
-                className="rounded-full bg-white/10 p-1 text-slate-400 hover:text-white transition"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+      {/* MODAL: Subscriptions & VIP Director Pass */}
+      <SubscriptionModal
+        isOpen={isDirectorPassModalOpen}
+        onClose={() => setIsDirectorPassModalOpen(false)}
+        isDirectorPro={isDirectorPro}
+        currentTier={subscriptionTier}
+        onActivateTier={handleActivateTier}
+        userEmail={currentUser?.email || undefined}
+      />
 
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Unlock unlimited acts, AI photorealistic artwork generation, custom genre prompts, and high-definition script downloads for your hangout game nights.
-            </p>
-
-            <div className="rounded-2xl border border-amber-500/30 bg-amber-950/20 p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-300">Lifetime Director Pass</span>
-                <span className="text-base font-black text-white">₦7,500 <span className="text-xs text-slate-400 font-normal">($9.99)</span></span>
-              </div>
-              <ul className="text-[11px] text-slate-300 space-y-1 pt-1">
-                <li>✨ Unlimited acts and full 5-act epic extensions</li>
-                <li>🎨 Photorealistic character and scene visual generation</li>
-                <li>💾 Cloud script archival and team sharing</li>
-              </ul>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={handleActivateDirectorPass}
-                className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 py-3 text-xs font-extrabold text-slate-950 hover:brightness-110 transition shadow-lg"
-              >
-                Activate Director Pass
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsDirectorPassModalOpen(false)}
-                className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold text-slate-400 hover:text-white transition"
-              >
-                Later
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* MODAL: Android APK Download & Compatibility */}
+      <AndroidApkModal
+        isOpen={isApkModalOpen}
+        onClose={() => setIsApkModalOpen(false)}
+      />
 
       {/* MODAL: Support Desk */}
       {isSupportModalOpen && (

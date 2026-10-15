@@ -112,6 +112,7 @@ export interface SavedSceneSwapData {
   activeScriptMode: 'comic' | 'studio';
   isSoundMuted: boolean;
   isDirectorPro?: boolean;
+  subscriptionTier?: string;
   updatedAt: string;
 }
 

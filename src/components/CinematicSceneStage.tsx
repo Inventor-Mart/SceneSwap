@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Volume2,
   VolumeX,
@@ -20,6 +20,8 @@ import {
   Share2,
   Film,
   Camera,
+  Download,
+  Image,
 } from 'lucide-react';
 import { soundEngine } from '../utils/soundEngine';
 import {
@@ -139,17 +141,29 @@ export function CinematicSceneStage({
   customPlayerPhotos = {},
   onUpdateCustomPhoto,
 }: CinematicSceneStageProps) {
-  // Scene Image State - dynamically generated to match exact scene heading and character actions
-  const [sceneImageUrl, setSceneImageUrl] = useState<string>(() => {
-    const visualBible = lockOrGetCharacterVisualBible(cast, genre, {
-      ...getStoredCustomAvatars(),
-      ...customPlayerPhotos,
-    });
-    const actionBeats = extractCharacterActionBeats(scriptLines, cast, visualBible);
-    return generateDynamicSceneSvg(settingDescription, genre, actionBeats, '16:9');
-  });
-  const [isGeneratingSceneImage, setIsGeneratingSceneImage] = useState<boolean>(false);
-  const [isAiGeneratedScene, setIsAiGeneratedScene] = useState<boolean>(false);
+  // Defensive guarantees against malformed AI outputs
+  const safeCast = Array.isArray(cast) && cast.length > 0 ? cast : [
+    { player: 'Player 1', role: 'Protagonist', archetype: 'The Lead', motivation: 'Complete the scene' },
+    { player: 'Player 2', role: 'Deuteragonist', archetype: 'The Wildcard', motivation: 'Challenge the status quo' },
+  ];
+  const safeScriptLines = Array.isArray(scriptLines) && scriptLines.length > 0 ? scriptLines : [
+    { speaker: safeCast[0].player, line: 'Action! Let the scene begin!', direction: '[Steps into the frame]' },
+    { speaker: safeCast[1]?.player || safeCast[0].player, line: 'Wait, did you hear that sound?', direction: '[Looking around nervously]' },
+  ];
+  const safePlotChoices = Array.isArray(plotChoices) ? plotChoices : [];
+  const safeColorStyles = Array.isArray(playerColorStyles) && playerColorStyles.length > 0 ? playerColorStyles : [
+    { border: 'border-purple-500/40', bg: 'bg-purple-950/40', text: 'text-purple-300', ring: 'ring-purple-500/40', badge: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
+  ];
+
+  // Current Line Details
+  const currentItem = safeScriptLines[currentLineIndex] || safeScriptLines[0] || {
+    speaker: safeCast[0]?.player || 'Director',
+    line: 'Action! Roll camera!',
+    direction: '[Cue action]'
+  };
+
+  // Visual Display Mode: 'photorealistic' (cinema backdrop) or 'graphic-novel' (direct visualization)
+  const [visualDisplayMode, setVisualDisplayMode] = useState<'graphic-novel' | 'photorealistic'>('photorealistic');
 
   // Local state for custom photos to ensure immediate re-rendering
   const [localCustomPhotos, setLocalCustomPhotos] = useState<Record<string, string>>(() => ({
@@ -162,16 +176,47 @@ export function CinematicSceneStage({
   // Character Portraits Cache - Pre-populated with realistic photographic portraits from 0ms
   const [characterPortraits, setCharacterPortraits] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {};
-    for (const member of cast) {
-      map[member.player.toLowerCase()] = getRealisticCharacterPhoto(
-        member.player,
-        member.role,
-        genre,
-        { ...getStoredCustomAvatars(), ...customPlayerPhotos }
-      );
+    for (const member of safeCast) {
+      if (member && member.player) {
+        map[member.player.toLowerCase()] = getRealisticCharacterPhoto(
+          member.player,
+          member.role || 'Protagonist',
+          genre || 'Nollywood Drama',
+          { ...getStoredCustomAvatars(), ...customPlayerPhotos }
+        );
+      }
     }
     return map;
   });
+
+  // Direct Graphic Novel visualization URL (updates dynamically on each line / action / speaker)
+  const graphicNovelVisualUrl = useMemo(() => {
+    try {
+      const visualBible = lockOrGetCharacterVisualBible(safeCast, genre, localCustomPhotos);
+      const actionBeats = extractCharacterActionBeats(safeScriptLines, safeCast, visualBible);
+      return generateDynamicSceneSvg(
+        settingDescription,
+        genre,
+        actionBeats,
+        '16:9',
+        currentItem?.speaker,
+        currentItem?.line,
+        currentItem?.direction,
+        localCustomPhotos,
+        chapterNumber
+      );
+    } catch (e) {
+      console.warn('Error creating graphic novel visualization:', e);
+      return getDefaultRealisticSceneImage(genre, chapterNumber);
+    }
+  }, [settingDescription, genre, safeCast, localCustomPhotos, safeScriptLines, currentItem, chapterNumber]);
+
+  // Scene Image State - reliable photographic backdrop matching genre and act
+  const [sceneImageUrl, setSceneImageUrl] = useState<string>(() => {
+    return getDefaultRealisticSceneImage(genre, chapterNumber);
+  });
+  const [isGeneratingSceneImage, setIsGeneratingSceneImage] = useState<boolean>(false);
+  const [isAiGeneratedScene, setIsAiGeneratedScene] = useState<boolean>(false);
 
   // Playback & Audio Controls
   const [isAutoPlaying, setIsAutoPlaying] = useState<boolean>(false);
@@ -213,21 +258,47 @@ export function CinematicSceneStage({
     }
   };
 
-  // Current Line Details
-  const currentItem = scriptLines[currentLineIndex] || scriptLines[0];
+  // Active displayed image in viewport
+  const activeDisplayedImage = visualDisplayMode === 'graphic-novel' ? graphicNovelVisualUrl : sceneImageUrl;
+
+  // Download graphic novel panel snapshot
+  const handleDownloadComicPanel = () => {
+    const targetUrl = activeDisplayedImage || graphicNovelVisualUrl;
+    if (!targetUrl) return;
+    const a = document.createElement('a');
+    a.href = targetUrl;
+    a.download = `sceneswap-act${chapterNumber}-${(genre || 'scene').replace(/\s+/g, '_')}-panel.svg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    soundEngine.playDialogueBlip(1.4);
+    setSoundEffectStamp('📥 COMIC PANEL SAVED!');
+    setTimeout(() => setSoundEffectStamp(null), 1400);
+  };
 
   // Fetch or generate realistic scene image with characters inside the scene!
   const fetchRealisticSceneImage = useCallback(async (forceRegenerate: boolean = false) => {
     setIsGeneratingSceneImage(true);
     try {
-      const visualBible = lockOrGetCharacterVisualBible(cast, genre, localCustomPhotos);
-      const actionDesc = extractPhysicalSceneAction(settingDescription, scriptLines, chapterTitle);
-      const continuityBlock = buildContinuityPromptBlock(visualBible, cast, actionDesc);
-      const actionBeats = extractCharacterActionBeats(scriptLines, cast, visualBible);
+      const visualBible = lockOrGetCharacterVisualBible(safeCast, genre, localCustomPhotos);
+      const actionDesc = extractPhysicalSceneAction(settingDescription || 'INT. STAGE', safeScriptLines, chapterTitle || 'Act 1');
+      const continuityBlock = buildContinuityPromptBlock(visualBible, safeCast, actionDesc);
+      const actionBeats = extractCharacterActionBeats(safeScriptLines, safeCast, visualBible);
 
-      // Immediately display procedural dynamic scene matching the scene heading and actions
-      const immediateSvg = generateDynamicSceneSvg(settingDescription, genre, actionBeats, '16:9');
-      setSceneImageUrl(immediateSvg);
+      // Generate direct graphic novel scene SVG
+      const directSvg = generateDynamicSceneSvg(
+        settingDescription,
+        genre,
+        actionBeats,
+        '16:9',
+        currentItem?.speaker,
+        currentItem?.line,
+        currentItem?.direction,
+        localCustomPhotos,
+        chapterNumber
+      );
+      const defaultBackdrop = getDefaultRealisticSceneImage(genre, chapterNumber);
+      setSceneImageUrl((prev) => (prev && !prev.startsWith('data:image/svg') ? prev : defaultBackdrop));
 
       const res = await fetch('/api/sceneswap/generate-image', {
         method: 'POST',
@@ -241,13 +312,15 @@ export function CinematicSceneStage({
           chapter_title: chapterTitle,
           type: 'scene',
           aspectRatio: '16:9',
-          cast: cast.map((c) => {
-            const locked = visualBible[c.player.toLowerCase().trim()];
+          forceRegenerate: true,
+          cast: safeCast.map((c) => {
+            const playerKey = String(c?.player || '').toLowerCase().trim();
+            const locked = playerKey ? visualBible[playerKey] : undefined;
             return {
-              player: c.player,
-              role: c.role,
-              archetype: c.archetype,
-              motivation: c.motivation,
+              player: c?.player || 'Actor',
+              role: c?.role || 'Protagonist',
+              archetype: c?.archetype || 'The Lead',
+              motivation: c?.motivation || 'Play the scene',
               wardrobe: locked?.wardrobe,
               props: locked?.signatureProps,
               facialFeatures: locked?.facialFeatures,
@@ -259,12 +332,13 @@ export function CinematicSceneStage({
           physicalActionPrompt: actionDesc,
           activeSpeaker: currentItem?.speaker,
           activeLine: currentItem?.line,
+          activeDirection: currentItem?.direction,
         }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        if (data.imageUrl) {
+        if (data.imageUrl && !data.imageUrl.startsWith('data:image/svg')) {
           setSceneImageUrl(data.imageUrl);
           setIsAiGeneratedScene(!!data.isAiGenerated);
         }
@@ -274,41 +348,43 @@ export function CinematicSceneStage({
     } finally {
       setIsGeneratingSceneImage(false);
     }
-  }, [genre, tone, settingDescription, chapterNumber, chapterTitle, cast, currentItem, localCustomPhotos, scriptLines]);
+  }, [genre, tone, settingDescription, chapterNumber, chapterTitle, safeCast, localCustomPhotos, safeScriptLines]);
 
   // Generate realistic character portraits matching nationality and custom uploads
   const fetchCharacterPortraits = useCallback(() => {
-    if (cast.length === 0) return;
+    if (safeCast.length === 0) return;
     const newPortraits: Record<string, string> = {};
-    for (const member of cast) {
-      newPortraits[member.player.toLowerCase()] = getRealisticCharacterPhoto(
-        member.player,
-        member.role,
-        genre,
-        localCustomPhotos
-      );
+    for (const member of safeCast) {
+      if (member && member.player) {
+        newPortraits[member.player.toLowerCase()] = getRealisticCharacterPhoto(
+          member.player,
+          member.role || 'Protagonist',
+          genre || 'Nollywood Drama',
+          localCustomPhotos
+        );
+      }
     }
     setCharacterPortraits(newPortraits);
-  }, [cast, genre, localCustomPhotos]);
+  }, [safeCast, genre, localCustomPhotos]);
 
   // AUTOMATICALLY load scene visual matching the scene heading and character actions on chapter change!
   useEffect(() => {
     fetchRealisticSceneImage();
     fetchCharacterPortraits();
-  }, [chapterNumber, chapterTitle, settingDescription, fetchRealisticSceneImage, fetchCharacterPortraits]);
+  }, [chapterNumber, chapterTitle, settingDescription, genre]);
 
   // Current Line Details
-  const totalLines = scriptLines.length;
+  const totalLines = safeScriptLines.length;
   const isLastLine = currentLineIndex >= totalLines - 1;
 
-  const currentSpeakerIdx = currentItem
-    ? cast.findIndex((c) => c.player.toLowerCase() === currentItem.speaker.toLowerCase())
+  const currentSpeakerIdx = currentItem && currentItem.speaker
+    ? safeCast.findIndex((c) => (c.player || '').toLowerCase() === (currentItem.speaker || '').toLowerCase())
     : 0;
   const speakerIndexSafe = currentSpeakerIdx >= 0 ? currentSpeakerIdx : 0;
-  const currentStyle = playerColorStyles[speakerIndexSafe % playerColorStyles.length];
-  const currentCastMember = cast.find(
-    (c) => c.player.toLowerCase() === currentItem?.speaker.toLowerCase()
-  );
+  const currentStyle = safeColorStyles[speakerIndexSafe % safeColorStyles.length] || safeColorStyles[0];
+  const currentCastMember = safeCast.find(
+    (c) => (c.player || '').toLowerCase() === (currentItem?.speaker || '').toLowerCase()
+  ) || safeCast[0];
 
   // Sound stamp trigger
   const handleTriggerStamp = (type: 'vine' | 'sting' | 'scratch' | 'boing' | 'thunder', label: string) => {
@@ -407,7 +483,7 @@ export function CinematicSceneStage({
 
   // Copy Screenplay Director's Cut
   const handleCopyDirectorsCut = () => {
-    const text = `🎬 [SCENESWAP DIRECTORS CUT - ACT ${chapterNumber}: ${chapterTitle}]\nGenre: ${genre} | Tone: ${tone}\nSetting: ${settingDescription}\n\nCAST ROLES:\n${cast.map((c) => `- ${c.player} as ${c.role} (${c.archetype})`).join('\n')}\n\nSCENE SCRIPT:\n${scriptLines.map((l) => `${l.speaker.toUpperCase()} ${l.direction ? `(${l.direction}) ` : ''}: "${l.line}"`).join('\n\n')}\n\n${isFinale ? `GRAND FINALE: ${finaleSummary || ''}` : `CHOICES:\n${plotChoices.map((p) => `[${p.id}] ${p.label}: ${p.description}`).join('\n')}`}`;
+    const text = `🎬 [SCENESWAP DIRECTORS CUT - ACT ${chapterNumber}: ${chapterTitle}]\nGenre: ${genre} | Tone: ${tone}\nSetting: ${settingDescription}\n\nCAST ROLES:\n${safeCast.map((c) => `- ${c.player} as ${c.role} (${c.archetype})`).join('\n')}\n\nSCENE SCRIPT:\n${safeScriptLines.map((l) => `${(l.speaker || 'ACTOR').toUpperCase()} ${l.direction ? `(${l.direction}) ` : ''}: "${l.line}"`).join('\n\n')}\n\n${isFinale ? `GRAND FINALE: ${finaleSummary || ''}` : `CHOICES:\n${safePlotChoices.map((p) => `[${p.id}] ${p.label}: ${p.description}`).join('\n')}`}`;
 
     navigator.clipboard.writeText(text);
     setCopiedCut(true);
@@ -432,32 +508,37 @@ export function CinematicSceneStage({
       />
       {/* 1. CINEMATIC SCENE IMAGE VIEWPORT (LARGE PHOTOREALISTIC DOMINANT VIEW) */}
       <div className="relative w-full aspect-[16/9] min-h-[380px] md:min-h-[500px] lg:min-h-[560px] overflow-hidden bg-slate-950 flex flex-col justify-between">
-        {/* Realistic Scene Background Image */}
-        {sceneImageUrl ? (
+        {/* Active Scene Background: Direct Graphic Novel Panel or Cinema Photo */}
+        {activeDisplayedImage ? (
           <img
-            src={sceneImageUrl}
-            alt={settingDescription}
+            src={activeDisplayedImage}
+            alt=""
+            aria-label={settingDescription}
             referrerPolicy="no-referrer"
-            className="absolute inset-0 h-full w-full object-cover object-center filter contrast-[1.05] brightness-95 transition-opacity duration-700 select-none pointer-events-none"
+            className="absolute inset-0 h-full w-full object-cover object-center filter contrast-[1.05] brightness-100 transition-opacity duration-300 select-none pointer-events-none"
           />
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-purple-950/40 to-black flex items-center justify-center">
             <div className="text-center space-y-2 p-6">
               <Sparkles className="h-8 w-8 text-amber-400 mx-auto animate-spin" />
-              <p className="text-xs text-slate-300 font-medium">Generating realistic cinematic scene...</p>
+              <p className="text-xs text-slate-300 font-medium">Generating graphic novel scene visualization...</p>
             </div>
           </div>
         )}
 
-        {/* Cinematic Film Lighting Vignette & Gradient Overlays */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent pointer-events-none" />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-transparent to-black/90 pointer-events-none" />
-        <div className="absolute inset-0 ring-1 ring-inset ring-white/10 pointer-events-none" />
+        {/* Cinematic Film Lighting Vignette & Gradient Overlays (subtle in graphic novel mode) */}
+        {visualDisplayMode === 'photorealistic' && (
+          <>
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-transparent to-black/90 pointer-events-none" />
+            <div className="absolute inset-0 ring-1 ring-inset ring-white/10 pointer-events-none" />
+          </>
+        )}
 
-        {/* Top Control Bar: Act, Genre, Sound, AI Badge */}
+        {/* Top Control Bar: Act, Genre, Mode Switcher, Save Image, Sound */}
         <div className="relative z-20 flex items-center justify-between p-3 md:p-4 text-xs">
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 rounded-full bg-black/75 px-3 py-1 border border-white/20 backdrop-blur-md">
+            <div className="flex items-center gap-1.5 rounded-full bg-black/80 px-3 py-1 border border-white/20 backdrop-blur-md">
               <Film className="h-3.5 w-3.5 text-amber-400" />
               <span className="font-black uppercase tracking-wider text-white text-[11px]">
                 Act {chapterNumber}
@@ -473,18 +554,47 @@ export function CinematicSceneStage({
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            {/* Realistic AI Scene Generation Indicator */}
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            {/* Visual Display Mode: Graphic Novel vs Cinema Still */}
+            <button
+              type="button"
+              onClick={() => {
+                const nextMode = visualDisplayMode === 'graphic-novel' ? 'photorealistic' : 'graphic-novel';
+                setVisualDisplayMode(nextMode);
+                soundEngine.playDialogueBlip(1.2);
+              }}
+              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-wider backdrop-blur-md transition active:scale-95 border ${
+                visualDisplayMode === 'graphic-novel'
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-400/50 shadow-[0_0_12px_rgba(251,191,36,0.3)]'
+                  : 'bg-black/70 text-slate-300 border-white/15 hover:text-white'
+              }`}
+              title="Toggle between Direct Graphic Novel visualization and Cinema Still"
+            >
+              <span>{visualDisplayMode === 'graphic-novel' ? '🎨 Comic Art' : '📸 Film Still'}</span>
+            </button>
+
+            {/* Save Graphic Novel Panel Image */}
+            <button
+              type="button"
+              onClick={handleDownloadComicPanel}
+              className="flex items-center gap-1 rounded-lg bg-black/70 px-2 py-1 text-[10px] text-slate-300 hover:text-white border border-white/15 backdrop-blur-md transition active:scale-95"
+              title="Download Graphic Novel Scene Image"
+            >
+              <Download className="h-3 w-3 text-amber-400" />
+              <span className="hidden md:inline">Save Image</span>
+            </button>
+
+            {/* Re-render Scene Photo */}
             <button
               type="button"
               onClick={() => fetchRealisticSceneImage(true)}
               disabled={isGeneratingSceneImage}
-              title="Regenerate realistic scene photo"
+              title="Regenerate scene visuals"
               className="flex items-center gap-1 rounded-lg bg-black/70 px-2 py-1 text-[10px] text-amber-300 hover:text-white border border-amber-500/30 hover:border-amber-400 backdrop-blur-md transition active:scale-95"
             >
               <RefreshCw className={`h-3 w-3 ${isGeneratingSceneImage ? 'animate-spin' : ''}`} />
               <span className="hidden md:inline font-medium">
-                {isGeneratingSceneImage ? 'Rendering Photo...' : 'Re-render Scene'}
+                {isGeneratingSceneImage ? 'Rendering...' : 'Re-render'}
               </span>
             </button>
 
@@ -523,7 +633,93 @@ export function CinematicSceneStage({
           </div>
         )}
 
-        {/* 2. CHARACTERS IN THE SCENE (REALISTIC PORTRAITS & SPOTLIGHT ACTOR) */}
+        {/* 1. SCENE HEADING & SETTING DESCRIPTION BANNER - ALWAYS VISIBLE, NEVER COVERED */}
+        <div className="relative z-20 px-3 md:px-5 mt-1 animate-in fade-in duration-200">
+          <div className="rounded-xl border border-amber-500/40 bg-black/90 px-3.5 py-2 backdrop-blur-md shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+            <div className="flex items-center gap-2.5 overflow-hidden">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-black font-mono">
+                🎬
+              </span>
+              <div className="min-w-0">
+                <span className="text-[10px] font-mono uppercase font-black tracking-widest text-amber-400 block">
+                  SCENE HEADING • {genre.toUpperCase()}
+                </span>
+                <p className="text-xs sm:text-sm font-black text-white tracking-wide truncate drop-shadow">
+                  {settingDescription || 'INT. FILM SET - DRAMATIC CINEMATIC ATMOSPHERE'}
+                </p>
+              </div>
+            </div>
+            {audioCue && (
+              <div className="hidden md:flex items-center gap-1.5 shrink-0 text-[10px] text-purple-200 bg-purple-950/70 px-2.5 py-1 rounded-md border border-purple-500/30">
+                <span className="h-1.5 w-1.5 rounded-full bg-purple-400 animate-pulse" />
+                <span className="truncate max-w-[260px]">Atmosphere: {audioCue}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 2. ACTOR'S ACTION / STAGE DIRECTION HIGHLIGHT */}
+        {currentItem?.direction ? (
+          <div className="relative z-20 px-3 md:px-6 my-auto py-1 flex flex-col items-center justify-center pointer-events-none">
+            <div className="max-w-xl rounded-xl border border-amber-400/40 bg-black/85 px-3 py-1.5 shadow-[0_0_25px_rgba(0,0,0,0.8)] backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center gap-2">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-400 text-slate-950 text-[9px] font-black">
+                  ⚡
+                </span>
+                <span className="text-[10px] font-mono uppercase font-black text-amber-300">
+                  {currentItem.speaker}:
+                </span>
+                <p className="text-xs font-semibold italic text-amber-100 font-serif truncate">
+                  &ldquo;{currentItem.direction}&rdquo;
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="my-auto" />
+        )}
+
+        {/* 3. LIVE DIALOGUE OVERLAY (COMIC SPEECH BALLOON IN COMIC MODE, CINEMA OVERLAY IN PHOTOREALISTIC MODE) */}
+        {visualDisplayMode === 'graphic-novel' ? (
+          <div className="w-full max-w-2xl mx-auto px-4 my-2 z-20 animate-in slide-in-from-bottom-2 fade-in duration-150">
+            <div className="relative rounded-2xl border-[3.5px] border-black bg-white p-3.5 md:p-4 text-slate-950 shadow-[6px_6px_0px_#000000]">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className={`text-[11px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-md ${currentStyle.bg} ${currentStyle.text} border-2 border-black shadow-[2px_2px_0px_#000]`}>
+                  💬 {currentItem?.speaker}
+                </span>
+                <span className="text-[10px] font-mono font-black text-amber-500 uppercase tracking-widest bg-black px-2 py-0.5 rounded">
+                  PANEL ACT 0{chapterNumber}
+                </span>
+              </div>
+              <p className="text-sm md:text-base font-black leading-snug text-slate-950 tracking-tight">
+                &ldquo;{currentItem?.line}&rdquo;
+              </p>
+              {/* Comic Speech Tail pointing down */}
+              <div className="absolute -bottom-3 left-12 h-0 w-0 border-x-8 border-x-transparent border-t-[12px] border-t-black" />
+              <div className="absolute -bottom-2 left-[49px] h-0 w-0 border-x-[7px] border-x-transparent border-t-[10px] border-t-white" />
+            </div>
+          </div>
+        ) : (
+          <div className="w-full max-w-2xl mx-auto px-4 my-2 z-20 animate-in slide-in-from-bottom-2 fade-in duration-150">
+            <div className="relative rounded-2xl border-2 border-white/40 bg-white/95 backdrop-blur-md p-3 md:p-3.5 text-slate-950 shadow-[0_12px_40px_rgba(0,0,0,0.95)]">
+              <div className="flex items-center justify-between mb-1">
+                <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md ${currentStyle.bg} ${currentStyle.text} border ${currentStyle.border}`}>
+                  💬 {currentItem?.speaker}
+                </span>
+                <span className="text-[9px] font-mono font-bold text-slate-500 uppercase tracking-widest">
+                  Live Dialogue
+                </span>
+              </div>
+              <p className="text-sm md:text-base font-bold leading-snug text-slate-950 tracking-tight">
+                &ldquo;{currentItem?.line}&rdquo;
+              </p>
+              {/* Speech Tail pointing down to speaker */}
+              <div className="absolute -bottom-2.5 left-10 h-0 w-0 border-x-8 border-x-transparent border-t-8 border-t-white" />
+            </div>
+          </div>
+        )}
+
+        {/* 4. CHARACTERS IN THE SCENE (REALISTIC PORTRAITS & SPOTLIGHT ACTOR) */}
         <div className="relative z-20 px-4 md:px-8 pb-2 flex items-end justify-between gap-3">
           {/* Active Speaking Character Spotlight Card (Hero Stance) */}
           {currentCastMember && (
@@ -583,9 +779,9 @@ export function CinematicSceneStage({
             <span className="hidden md:inline text-[9px] font-bold uppercase tracking-wider text-slate-400 pl-1 pr-1">
               Scene Cast:
             </span>
-            {cast.map((member, i) => {
-              const isSpeaking = member.player.toLowerCase() === currentItem?.speaker.toLowerCase();
-              const style = playerColorStyles[i % playerColorStyles.length];
+            {safeCast.map((member, i) => {
+              const isSpeaking = (member.player || '').toLowerCase() === (currentItem?.speaker || '').toLowerCase();
+              const style = safeColorStyles[i % safeColorStyles.length] || safeColorStyles[0];
 
               return (
                 <div
@@ -595,8 +791,8 @@ export function CinematicSceneStage({
                   <button
                     type="button"
                     onClick={() => {
-                      const nextLineIdx = scriptLines.findIndex(
-                        (l) => l.speaker.toLowerCase() === member.player.toLowerCase()
+                      const nextLineIdx = safeScriptLines.findIndex(
+                        (l) => (l.speaker || '').toLowerCase() === (member.player || '').toLowerCase()
                       );
                       if (nextLineIdx >= 0) {
                         soundEngine.playDialogueBlip(1.1);
@@ -771,7 +967,7 @@ export function CinematicSceneStage({
 
             {/* Line Progress Bar Dots */}
             <div className="w-full flex items-center gap-1 pt-1">
-              {scriptLines.map((_, idx) => (
+              {safeScriptLines.map((_, idx) => (
                 <div
                   key={idx}
                   onClick={() => onLineChange(idx)}
@@ -854,7 +1050,7 @@ export function CinematicSceneStage({
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                  {plotChoices.map((choice) => {
+                  {safePlotChoices.map((choice) => {
                     const isSelected = selectedVoteId === choice.id;
                     const votes = voteCounts[choice.id] || 0;
                     const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;

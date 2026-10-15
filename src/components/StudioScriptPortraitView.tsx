@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Film,
   Sparkles,
@@ -69,6 +69,8 @@ interface StudioScriptPortraitViewProps {
   playerColorStyles: { bg: string; text: string; border: string; badge: string }[];
   customPlayerPhotos?: Record<string, string>;
   onUpdateCustomPhoto?: (playerName: string, dataUrl: string) => void;
+  isDirectorPro?: boolean;
+  onOpenSubscriptionModal?: () => void;
 }
 
 export function StudioScriptPortraitView({
@@ -94,24 +96,40 @@ export function StudioScriptPortraitView({
   playerColorStyles,
   customPlayerPhotos = {},
   onUpdateCustomPhoto,
+  isDirectorPro = false,
+  onOpenSubscriptionModal,
 }: StudioScriptPortraitViewProps) {
   // Mode toggle inside studio script: TikTok Live Teleprompter vs Full Screenplay Sheet
   const [viewSubMode, setViewSubMode] = useState<'tiktok' | 'screenplay'>('tiktok');
 
-  // Scene & Character Image State - dynamically generated to match exact scene heading and character actions
-  const [sceneImageUrl, setSceneImageUrl] = useState<string>(() => {
-    const visualBible = lockOrGetCharacterVisualBible(cast, genre, localCustomPhotos);
-    const actionBeats = extractCharacterActionBeats(scriptLines, cast, visualBible);
-    return generateDynamicSceneSvg(settingDescription, genre, actionBeats, '9:16');
-  });
-  const [isGeneratingSceneImage, setIsGeneratingSceneImage] = useState<boolean>(false);
-  const [characterPortraits, setCharacterPortraits] = useState<Record<string, string>>({});
+  // Defensive guarantees against malformed inputs
+  const safeCast = Array.isArray(cast) && cast.length > 0 ? cast : [
+    { player: 'Player 1', role: 'Protagonist', archetype: 'The Lead', motivation: 'Complete the scene' },
+    { player: 'Player 2', role: 'Deuteragonist', archetype: 'The Wildcard', motivation: 'Challenge the status quo' },
+  ];
+  const safeScriptLines = Array.isArray(scriptLines) && scriptLines.length > 0 ? scriptLines : [
+    { speaker: safeCast[0].player, line: 'Action! Let the scene begin!', direction: '[Steps into the frame]' },
+  ];
+  const safePlotChoices = Array.isArray(plotChoices) ? plotChoices : [];
+  const safeColorStyles = Array.isArray(playerColorStyles) && playerColorStyles.length > 0 ? playerColorStyles : [
+    { border: 'border-purple-500/40', bg: 'bg-purple-950/40', text: 'text-purple-300', ring: 'ring-purple-500/40', badge: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
+  ];
 
-  // Local state for custom photos to ensure immediate re-rendering
+  // Local state for custom photos declared FIRST to avoid TDZ reference errors
   const [localCustomPhotos, setLocalCustomPhotos] = useState<Record<string, string>>(() => ({
     ...getStoredCustomAvatars(),
     ...customPlayerPhotos,
   }));
+
+  // Visual Display Mode: 'photorealistic' (cinema backdrop) or 'graphic-novel' (direct visualization)
+  const [visualDisplayMode, setVisualDisplayMode] = useState<'graphic-novel' | 'photorealistic'>('photorealistic');
+
+  // Scene & Character Image State - reliable photographic backdrop matching genre and act
+  const [sceneImageUrl, setSceneImageUrl] = useState<string>(() => {
+    return getDefaultRealisticSceneImage(genre, chapterNumber);
+  });
+  const [isGeneratingSceneImage, setIsGeneratingSceneImage] = useState<boolean>(false);
+  const [characterPortraits, setCharacterPortraits] = useState<Record<string, string>>({});
 
   // Avatar Upload State
   const [uploadTargetPlayer, setUploadTargetPlayer] = useState<string | null>(null);
@@ -132,32 +150,65 @@ export function StudioScriptPortraitView({
 
   // Generate realistic character portraits matching nationality and custom uploads
   const fetchCharacterPortraits = useCallback(() => {
-    if (cast.length === 0) return;
+    if (safeCast.length === 0) return;
     const newPortraits: Record<string, string> = {};
-    for (const member of cast) {
-      newPortraits[member.player.toLowerCase()] = getRealisticCharacterPhoto(
-        member.player,
-        member.role,
-        genre,
-        localCustomPhotos
-      );
+    for (const member of safeCast) {
+      if (member && member.player) {
+        newPortraits[member.player.toLowerCase()] = getRealisticCharacterPhoto(
+          member.player,
+          member.role || 'Protagonist',
+          genre || 'Nollywood Drama',
+          localCustomPhotos
+        );
+      }
     }
     setCharacterPortraits(newPortraits);
-  }, [cast, genre, localCustomPhotos]);
+  }, [safeCast, genre, localCustomPhotos]);
 
   // Current line details
-  const currentItem = scriptLines[currentLineIndex] || scriptLines[0];
-  const totalLines = scriptLines.length;
+  const currentItem = safeScriptLines[currentLineIndex] || safeScriptLines[0] || {
+    speaker: safeCast[0]?.player || 'Director',
+    line: 'Action! Roll camera!',
+    direction: '[Cue action]',
+  };
+  const totalLines = safeScriptLines.length;
   const isLastLine = currentLineIndex >= totalLines - 1;
 
-  const currentSpeakerIdx = currentItem
-    ? cast.findIndex((c) => c.player.toLowerCase() === currentItem.speaker.toLowerCase())
+  const currentSpeakerIdx = currentItem && currentItem.speaker
+    ? safeCast.findIndex((c) => (c.player || '').toLowerCase() === (currentItem.speaker || '').toLowerCase())
     : 0;
   const speakerIndexSafe = currentSpeakerIdx >= 0 ? currentSpeakerIdx : 0;
-  const currentStyle = playerColorStyles[speakerIndexSafe % playerColorStyles.length];
-  const currentCastMember = cast.find(
-    (c) => c.player.toLowerCase() === currentItem?.speaker.toLowerCase()
-  );
+  const currentStyle = safeColorStyles[speakerIndexSafe % safeColorStyles.length] || safeColorStyles[0];
+  const currentCastMember = safeCast.find(
+    (c) => (c.player || '').toLowerCase() === (currentItem?.speaker || '').toLowerCase()
+  ) || safeCast[0];
+
+  // Direct Graphic Novel visualization URL in 9:16 portrait format (updates dynamically on each line)
+  const graphicNovelVisualUrl = useMemo(() => {
+    try {
+      const visualBible = lockOrGetCharacterVisualBible(safeCast, genre, localCustomPhotos);
+      const actionBeats = extractCharacterActionBeats(safeScriptLines, safeCast, visualBible);
+      return generateDynamicSceneSvg(
+        settingDescription,
+        genre,
+        actionBeats,
+        '9:16',
+        currentItem?.speaker,
+        currentItem?.line,
+        currentItem?.direction,
+        localCustomPhotos,
+        chapterNumber
+      );
+    } catch (e) {
+      console.warn('Error creating graphic novel visualization:', e);
+      return getDefaultRealisticSceneImage(genre, chapterNumber);
+    }
+  }, [settingDescription, genre, safeCast, localCustomPhotos, safeScriptLines, currentItem, chapterNumber]);
+
+  // Active displayed image in portrait viewport - always an authentic photorealistic film still
+  const activeDisplayedImage = (sceneImageUrl && !sceneImageUrl.startsWith('data:image/svg'))
+    ? sceneImageUrl
+    : getDefaultRealisticSceneImage(genre, chapterNumber);
 
   // Handle triggering file upload for a specific player
   const triggerUploadFor = (playerName: string) => {
@@ -188,8 +239,7 @@ export function StudioScriptPortraitView({
     }
   };
 
-  // Regenerate realistic scene image via backend AI anchoring strictly on the SCENE HEADING
-  // and the CHARACTERS performing their actions & dialogues inside the room!
+  // Always generate a new realistic image tailored to the current scene via backend Gemini
   const handleRegenerateScene = useCallback(async () => {
     setIsGeneratingSceneImage(true);
     try {
@@ -198,9 +248,9 @@ export function StudioScriptPortraitView({
       const continuityBlock = buildContinuityPromptBlock(visualBible, cast, actionDesc);
       const actionBeats = extractCharacterActionBeats(scriptLines, cast, visualBible);
 
-      // Immediately display procedural dynamic scene matching the scene heading and actions
-      const immediateSvg = generateDynamicSceneSvg(settingDescription, genre, actionBeats, '9:16');
-      setSceneImageUrl(immediateSvg);
+      // Reliable high-resolution scene photo matching genre and act as instant base
+      const defaultBackdrop = getDefaultRealisticSceneImage(genre, chapterNumber);
+      setSceneImageUrl((prev) => (prev && !prev.startsWith('data:image/svg') ? prev : defaultBackdrop));
 
       const res = await fetch('/api/sceneswap/generate-image', {
         method: 'POST',
@@ -214,8 +264,9 @@ export function StudioScriptPortraitView({
           chapter_title: chapterTitle,
           type: 'scene',
           aspectRatio: '9:16',
-          cast: cast.map((c) => {
-            const locked = visualBible[c.player.toLowerCase().trim()];
+          forceRegenerate: true,
+          cast: safeCast.map((c) => {
+            const locked = visualBible[(c.player || '').toLowerCase().trim()];
             return {
               player: c.player,
               role: c.role,
@@ -237,22 +288,23 @@ export function StudioScriptPortraitView({
 
       if (res.ok) {
         const data = await res.json();
-        if (data.imageUrl) {
+        if (data.imageUrl && !data.imageUrl.startsWith('data:image/svg')) {
           setSceneImageUrl(data.imageUrl);
         }
       }
     } catch (err) {
-      console.warn('Failed to regenerate scene image:', err);
+      console.warn('Failed to generate new realistic scene image:', err);
     } finally {
       setIsGeneratingSceneImage(false);
     }
-  }, [genre, tone, settingDescription, chapterNumber, chapterTitle, cast, currentItem, localCustomPhotos, scriptLines]);
+  }, [genre, tone, settingDescription, chapterNumber, chapterTitle, cast, localCustomPhotos, scriptLines, currentItem, safeCast]);
 
-  // AUTOMATICALLY load scene visual matching the scene heading and character actions on chapter change!
+  // AUTOMATICALLY generate a new realistic image tailored to the scene for each new scene
   useEffect(() => {
+    setSceneImageUrl(getDefaultRealisticSceneImage(genre, chapterNumber));
     handleRegenerateScene();
     fetchCharacterPortraits();
-  }, [chapterNumber, chapterTitle, settingDescription, handleRegenerateScene, fetchCharacterPortraits]);
+  }, [chapterNumber, chapterTitle, settingDescription, genre]);
 
   // Sound stamp trigger
   const handleTriggerStamp = (type: 'vine' | 'sting' | 'scratch' | 'boing' | 'thunder', label: string) => {
@@ -356,7 +408,7 @@ export function StudioScriptPortraitView({
 
   // Copy Director's Cut
   const handleCopyDirectorsCut = () => {
-    const text = `🎬 [SCENESWAP DIRECTORS CUT - ACT ${chapterNumber}: ${chapterTitle}]\nGenre: ${genre} | Tone: ${tone}\nSetting: ${settingDescription}\n\nCAST ROLES:\n${cast.map((c) => `- ${c.player} as ${c.role} (${c.archetype})`).join('\n')}\n\nSCENE SCRIPT:\n${scriptLines.map((l) => `${l.speaker.toUpperCase()} ${l.direction ? `(${l.direction}) ` : ''}: "${l.line}"`).join('\n\n')}\n\n${isFinale ? `GRAND FINALE: ${finaleSummary || ''}` : `CHOICES:\n${plotChoices.map((p) => `[${p.id}] ${p.label}: ${p.description}`).join('\n')}`}`;
+    const text = `🎬 [SCENESWAP DIRECTORS CUT - ACT ${chapterNumber}: ${chapterTitle}]\nGenre: ${genre} | Tone: ${tone}\nSetting: ${settingDescription}\n\nCAST ROLES:\n${safeCast.map((c) => `- ${c.player} as ${c.role} (${c.archetype})`).join('\n')}\n\nSCENE SCRIPT:\n${safeScriptLines.map((l) => `${(l.speaker || 'ACTOR').toUpperCase()} ${l.direction ? `(${l.direction}) ` : ''}: "${l.line}"`).join('\n\n')}\n\n${isFinale ? `GRAND FINALE: ${finaleSummary || ''}` : `CHOICES:\n${safePlotChoices.map((p) => `[${p.id}] ${p.label}: ${p.description}`).join('\n')}`}`;
 
     navigator.clipboard.writeText(text);
     setCopiedCut(true);
@@ -386,46 +438,62 @@ export function StudioScriptPortraitView({
           TIKTOK PORTRAIT BACKGROUND (9:16 VERTICAL REEL PHOTO COVERING THE STAGE)
           ========================================================================= */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none select-none">
-        {sceneImageUrl ? (
-          <img
-            src={sceneImageUrl}
-            alt={settingDescription}
-            referrerPolicy="no-referrer"
-            className={`h-full w-full object-cover object-center filter contrast-[1.08] transition-all duration-700 ${
-              viewSubMode === 'screenplay'
-                ? 'brightness-[0.25] blur-sm scale-105'
-                : 'brightness-90 scale-100'
-            }`}
-          />
-        ) : (
-          <div className="h-full w-full bg-gradient-to-b from-slate-900 via-purple-950 to-black" />
-        )}
+        <img
+          src={activeDisplayedImage || getDefaultRealisticSceneImage(genre, chapterNumber)}
+          alt=""
+          aria-label={settingDescription}
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            const fallback = getDefaultRealisticSceneImage(genre, chapterNumber);
+            if ((e.target as HTMLImageElement).src !== fallback) {
+              (e.target as HTMLImageElement).src = fallback;
+            }
+          }}
+          className={`h-full w-full object-cover object-center filter contrast-[1.08] transition-all duration-700 ${
+            viewSubMode === 'screenplay'
+              ? 'brightness-[0.25] blur-sm scale-105'
+              : 'brightness-90 scale-100'
+          }`}
+        />
 
-        {/* TikTok Cinematic Film Lighting Vignettes */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-black/80" />
-        <div className="absolute inset-0 bg-radial-gradient from-transparent via-black/20 to-black/85" />
-        <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />
+        {/* Subtle Edge Vignette */}
+        <div className="absolute inset-0 ring-1 ring-inset ring-white/10 pointer-events-none" />
       </div>
 
       {/* =========================================================================
           TOP TIKTOK STATUS HEADER BAR
           ========================================================================= */}
-      <div className="relative z-30 flex items-center justify-between p-3 sm:p-4 text-xs bg-gradient-to-b from-black/90 via-black/60 to-transparent backdrop-blur-[2px]">
+      <div className="relative z-30 flex items-center justify-between p-3 sm:p-4 text-xs">
         {/* Left: TikTok Live Script Indicator & Sub-mode Switcher */}
         <div className="flex items-center gap-2">
-          {/* Live Indicator Pill */}
-          <div className="flex items-center gap-1.5 rounded-full bg-black/80 px-2.5 py-1 border border-red-500/40 shadow-[0_0_12px_rgba(239,68,68,0.35)] backdrop-blur-md">
+          {/* Live Indicator - Clean, No Pill Shape */}
+          <div className="flex items-center gap-1.5 px-1 py-0.5">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
             </span>
-            <span className="font-black uppercase tracking-wider text-red-300 text-[10px]">
-              LIVE SCRIPT
+            <span className="font-black uppercase tracking-wider text-red-400 text-[10px] drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
+              LIVE
             </span>
-            <span className="text-white/30 text-[9px]">|</span>
-            <span className="font-bold uppercase tracking-wider text-amber-300 text-[10px]">
+            <span className="text-white/40 text-[9px]">|</span>
+            <span className="font-bold uppercase tracking-wider text-amber-300 text-[10px] drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
               ACT 0{chapterNumber}
             </span>
+            {isDirectorPro ? (
+              <span className="hidden sm:inline-flex items-center gap-1 font-extrabold uppercase tracking-wider text-amber-300 text-[9px] bg-amber-500/25 border border-amber-400/40 px-1.5 py-0.5 rounded shadow">
+                <Crown className="h-2.5 w-2.5 text-amber-400" />
+                VIP Director
+              </span>
+            ) : onOpenSubscriptionModal ? (
+              <button
+                type="button"
+                onClick={onOpenSubscriptionModal}
+                className="hidden sm:inline-flex items-center gap-1 font-bold text-amber-400 hover:text-white bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/30 px-1.5 py-0.5 rounded transition cursor-pointer text-[9px]"
+              >
+                <Crown className="h-2.5 w-2.5 text-amber-400" />
+                <span>VIP Pass</span>
+              </button>
+            ) : null}
           </div>
 
           {/* Sub-mode Tab Selector: TikTok Reel vs Full Screenplay */}
@@ -454,6 +522,14 @@ export function StudioScriptPortraitView({
               <span>Full Script</span>
             </button>
           </div>
+
+          {/* Status indicator when generating new realistic scene */}
+          {isGeneratingSceneImage && (
+            <div className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-bold border border-amber-400/40 bg-black/80 text-amber-300 shadow animate-pulse backdrop-blur-md">
+              <Sparkles className="h-3 w-3 text-amber-400 animate-spin" />
+              <span>Generating scene...</span>
+            </div>
+          )}
         </div>
 
         {/* Right: Audio Cue, Mute, Re-render Photo, Fullscreen */}
@@ -487,15 +563,16 @@ export function StudioScriptPortraitView({
             {isSoundMuted ? <VolumeX className="h-3.5 w-3.5 text-rose-400" /> : <Volume2 className="h-3.5 w-3.5 text-emerald-400" />}
           </button>
 
-          {/* Re-render Scene Photo With Characters */}
+          {/* Generate / Re-roll Realistic Scene Photo */}
           <button
             type="button"
             onClick={handleRegenerateScene}
             disabled={isGeneratingSceneImage}
-            title="Re-render scene photo with characters inside"
-            className="flex items-center rounded-lg bg-black/70 p-1.5 text-slate-300 hover:text-white border border-white/15 backdrop-blur-md transition active:scale-95"
+            title="Generate new realistic scene photo tailored for this scene"
+            className="flex items-center gap-1 rounded-lg bg-black/70 px-2 py-1 text-xs text-amber-300 hover:text-white border border-amber-500/30 hover:border-amber-400 backdrop-blur-md transition active:scale-95 disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isGeneratingSceneImage ? 'animate-spin text-amber-400' : ''}`} />
+            <span className="hidden sm:inline text-[10px] font-bold">New Photo</span>
           </button>
 
           {/* Fullscreen Button */}
@@ -656,20 +733,18 @@ export function StudioScriptPortraitView({
           ========================================================================= */}
       {viewSubMode === 'tiktok' ? (
         <div className="relative z-20 flex-1 flex flex-col justify-between p-3 sm:p-5 overflow-hidden">
-          {/* Top Setting & Chapter Title */}
-          <div className="pt-1 pointer-events-none max-w-[78%]">
-            <h2 className="text-base sm:text-xl font-black text-white drop-shadow-[0_2px_8px_rgba(0,0,0,1)] tracking-tight">
-              {chapterTitle}
+          {/* Top Setting & Chapter Title - Clean Text, No Shape */}
+          <div className="pt-1 pb-1 max-w-[85%] z-20 pointer-events-none">
+            <span className="text-[10px] font-mono uppercase font-black tracking-widest text-amber-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] block">
+              ACT {chapterNumber} • {genre.toUpperCase()}
+            </span>
+            <h2 className="text-xs sm:text-sm font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] tracking-tight truncate">
+              {settingDescription || chapterTitle}
             </h2>
-            <p className="text-[11px] text-amber-200/90 font-medium italic drop-shadow-[0_1px_4px_rgba(0,0,0,1)] line-clamp-1 mt-0.5">
-              📍 {settingDescription}
-            </p>
           </div>
 
-          {/* =========================================================================
-              OPEN SCENE VIEW: CHARACTERS ARE SHOWN DRAWN/ACTING DIRECTLY INSIDE THE ARTWORK
-              ========================================================================= */}
-          <div className="flex-1 my-auto pointer-events-none" />
+          {/* Middle Viewport - Clean and unobstructed view */}
+          <div className="flex-1" />
 
           {/* Floating Cast Members Drawer if toggled */}
           {showCastDrawer && (
@@ -688,8 +763,8 @@ export function StudioScriptPortraitView({
                 </button>
               </div>
               <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                {cast.map((member, i) => {
-                  const style = playerColorStyles[i % playerColorStyles.length];
+                {safeCast.map((member, i) => {
+                  const style = safeColorStyles[i % safeColorStyles.length] || safeColorStyles[0];
                   return (
                     <div key={i} className={`p-1.5 rounded-lg border ${style.border} ${style.bg} text-[10px]`}>
                       <div className="flex items-center justify-between">
@@ -716,40 +791,40 @@ export function StudioScriptPortraitView({
             </div>
           )}
 
-          {/* TikTok Bottom Subtitle Card & Teleprompter Stage */}
-          <div className="w-full space-y-2.5 max-w-[88%] sm:max-w-full">
-            {/* Speaker Tag, Role, Direction */}
+          {/* TikTok Bottom Subtitle Stage - Clean, No Box Shapes */}
+          <div className="w-full space-y-2 max-w-[88%] sm:max-w-full">
+            {/* Speaker Tag, Role, Direction - Clean Text */}
             <div className="flex items-center gap-2 flex-wrap">
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-black uppercase tracking-wider border shadow-md ${currentStyle.border} ${currentStyle.bg} ${currentStyle.text}`}>
+              <span className={`text-xs font-black uppercase tracking-wider drop-shadow-[0_1px_4px_rgba(0,0,0,0.95)] ${currentStyle.text}`}>
                 {currentItem?.speaker}
               </span>
 
               {currentCastMember && (
-                <span className="text-[11px] font-bold text-white drop-shadow">
+                <span className="text-[11px] font-bold text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.95)]">
                   as <span className="text-amber-300">{currentCastMember.role}</span>
                 </span>
               )}
 
               {currentItem?.direction && (
-                <span className="text-[10px] text-amber-200/90 italic font-serif bg-black/60 px-2 py-0.5 rounded-md border border-white/10 backdrop-blur-sm">
-                  {currentItem.direction}
+                <span className="text-[10px] text-amber-200/90 italic font-serif drop-shadow-[0_1px_4px_rgba(0,0,0,0.95)]">
+                  ({currentItem.direction})
                 </span>
               )}
             </div>
 
-            {/* The TikTok Subtitle Box: Large High-Legibility Typography */}
+            {/* The TikTok Subtitle Text: Clean Floating Typography */}
             <div
               onClick={handleNextLine}
-              className="cursor-pointer group relative rounded-2xl bg-black/85 hover:bg-black/95 p-4 sm:p-5 border border-white/20 shadow-[0_0_30px_rgba(0,0,0,0.8)] backdrop-blur-xl transition duration-200 select-none"
+              className="cursor-pointer group relative py-1 px-0.5 transition duration-200 select-none"
             >
-              <p className="text-base sm:text-xl font-bold leading-relaxed text-white drop-shadow-md tracking-tight">
+              <p className="text-base sm:text-xl font-black leading-relaxed text-white drop-shadow-[0_2px_8px_rgba(0,0,0,1)] tracking-tight">
                 &ldquo;{currentItem?.line}&rdquo;
               </p>
-              <div className="flex items-center justify-between pt-2 mt-1 border-t border-white/10 text-[10px] text-slate-400">
-                <span className="font-mono text-amber-300 font-bold">
+              <div className="flex items-center justify-between pt-1 text-[10px] text-slate-300">
+                <span className="font-mono text-amber-300 font-bold drop-shadow-[0_1px_3px_rgba(0,0,0,0.95)]">
                   Line {currentLineIndex + 1} of {totalLines}
                 </span>
-                <span className="group-hover:text-amber-300 transition text-[9px]">
+                <span className="group-hover:text-amber-300 transition text-[9px] drop-shadow-[0_1px_3px_rgba(0,0,0,0.95)]">
                   Tap to advance ➔
                 </span>
               </div>
@@ -763,7 +838,7 @@ export function StudioScriptPortraitView({
                   type="button"
                   onClick={handlePrevLine}
                   disabled={currentLineIndex === 0}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-black/75 text-slate-200 border border-white/15 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition active:scale-95 shadow"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-black/60 text-slate-200 border border-white/10 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition active:scale-95 shadow backdrop-blur-sm"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
                   <span>Prev</span>
@@ -773,10 +848,10 @@ export function StudioScriptPortraitView({
                 <button
                   type="button"
                   onClick={() => setIsAutoPlaying(!isAutoPlaying)}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold border transition active:scale-95 shadow ${
+                  className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold border transition active:scale-95 shadow backdrop-blur-sm ${
                     isAutoPlaying
                       ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white border-amber-400 shadow-amber-500/30'
-                      : 'bg-black/75 text-slate-200 border-white/15 hover:bg-white/10'
+                      : 'bg-black/60 text-slate-200 border-white/10 hover:bg-white/10'
                   }`}
                 >
                   {isAutoPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
@@ -797,23 +872,6 @@ export function StudioScriptPortraitView({
                 <span>{isLastLine ? 'Act Vote ➔' : 'Next ➔'}</span>
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
-            </div>
-
-            {/* Line Progress Tracker Bar */}
-            <div className="w-full flex items-center gap-1 pt-1">
-              {scriptLines.map((_, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => onLineChange(idx)}
-                  className={`h-1.5 flex-1 rounded-full cursor-pointer transition-all duration-300 ${
-                    idx === currentLineIndex
-                      ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.9)] scale-y-125'
-                      : idx < currentLineIndex
-                      ? 'bg-purple-500/70'
-                      : 'bg-white/20 hover:bg-white/40'
-                  }`}
-                />
-              ))}
             </div>
           </div>
         </div>
@@ -863,9 +921,9 @@ export function StudioScriptPortraitView({
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-              {cast.map((member, i) => {
-                const color = playerColorStyles[i % playerColorStyles.length];
-                const photo = characterPortraits[member.player.toLowerCase()] || getRealisticCharacterPhoto(member.player, member.role, genre, localCustomPhotos);
+              {safeCast.map((member, i) => {
+                const color = safeColorStyles[i % safeColorStyles.length] || safeColorStyles[0];
+                const photo = characterPortraits[(member.player || '').toLowerCase()] || getRealisticCharacterPhoto(member.player, member.role, genre, localCustomPhotos);
 
                 return (
                   <div key={i} className={`rounded-lg border ${color.border} ${color.bg} p-2 text-xs backdrop-blur-sm flex items-start gap-2`}>
@@ -889,7 +947,7 @@ export function StudioScriptPortraitView({
                         <span className={`text-[10px] font-medium ${color.text}`}>{member.role} ({member.archetype})</span>
                       </div>
                       <div className="flex items-center gap-1 text-[9px] text-emerald-300">
-                        {localCustomPhotos[member.player.toLowerCase()] && (
+                        {localCustomPhotos[(member.player || '').toLowerCase()] && (
                           <span className="text-[8px] bg-emerald-500/20 text-emerald-300 px-1 rounded">Custom Photo</span>
                         )}
                       </div>
@@ -921,9 +979,9 @@ export function StudioScriptPortraitView({
             </div>
 
             <div className="space-y-3">
-              {scriptLines.map((item, idx) => {
-                const playerIndex = cast.findIndex((c) => c.player.toLowerCase() === item.speaker.toLowerCase());
-                const playerColor = playerColorStyles[(playerIndex >= 0 ? playerIndex : 0) % playerColorStyles.length];
+              {safeScriptLines.map((item, idx) => {
+                const playerIndex = safeCast.findIndex((c) => (c.player || '').toLowerCase() === (item.speaker || '').toLowerCase());
+                const playerColor = safeColorStyles[(playerIndex >= 0 ? playerIndex : 0) % safeColorStyles.length] || safeColorStyles[0];
                 const isCurrent = idx === currentLineIndex;
 
                 return (
@@ -1018,7 +1076,7 @@ export function StudioScriptPortraitView({
               </p>
 
               <div className="space-y-2">
-                {plotChoices.map((choice) => {
+                {safePlotChoices.map((choice) => {
                   const isSelected = selectedVoteId === choice.id;
                   const votes = voteCounts[choice.id] || 0;
                   const votePercent = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
