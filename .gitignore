@@ -9,4 +9,4 @@ coverage/
 !.env.example
 test_res*.json
 server.js
-
+paystack-runtime-config.json

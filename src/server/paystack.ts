@@ -3,23 +3,61 @@
  * Supports inline/popup modal, standard checkout, webhooks, and verification.
  */
 
-let runtimePaystackSecretKey: string | null = null;
-let runtimePaystackPublicKey: string | null = null;
+import fs from 'fs';
+import path from 'path';
+
+function loadStoredPaystackConfig(): { publicKey?: string; secretKey?: string } {
+  try {
+    const configPath = path.resolve(process.cwd(), 'paystack-runtime-config.json');
+    if (fs.existsSync(configPath)) {
+      const content = fs.readFileSync(configPath, 'utf8');
+      return JSON.parse(content);
+    }
+  } catch (err) {
+    console.warn('Could not read paystack-runtime-config.json:', err);
+  }
+  return {};
+}
+
+const initialConfig = loadStoredPaystackConfig();
+let runtimePaystackSecretKey: string | null = initialConfig.secretKey || null;
+let runtimePaystackPublicKey: string | null = initialConfig.publicKey || null;
 
 export function setRuntimePaystackKeys(keys: { secretKey?: string | null; publicKey?: string | null }) {
   if (keys.secretKey !== undefined) runtimePaystackSecretKey = keys.secretKey ? keys.secretKey.trim() : null;
   if (keys.publicKey !== undefined) runtimePaystackPublicKey = keys.publicKey ? keys.publicKey.trim() : null;
+
+  try {
+    const configPath = path.resolve(process.cwd(), 'paystack-runtime-config.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          publicKey: runtimePaystackPublicKey || undefined,
+          secretKey: runtimePaystackSecretKey || undefined,
+        },
+        null,
+        2
+      )
+    );
+  } catch (err) {
+    console.warn('Could not save paystack-runtime-config.json:', err);
+  }
 }
 
 export function getPaystackStatus() {
   const secretKey = runtimePaystackSecretKey || process.env.PAYSTACK_SECRET_KEY;
   const publicKey = runtimePaystackPublicKey || process.env.VITE_PAYSTACK_PUBLIC_KEY;
   const isConfigured = Boolean(secretKey && secretKey.length > 5);
-  const isTest = secretKey?.startsWith('sk_test_') || publicKey?.startsWith('pk_test_') || !isConfigured;
+  const isLive = Boolean(
+    (secretKey && secretKey.startsWith('sk_live_')) ||
+    (publicKey && publicKey.startsWith('pk_live_'))
+  );
+  const isTest = secretKey?.startsWith('sk_test_') || publicKey?.startsWith('pk_test_');
 
   return {
     isConfigured,
-    mode: isConfigured ? (isTest ? 'test' : 'live') : 'simulated',
+    mode: isLive ? 'live' : (isTest ? 'test' : 'simulated'),
     hasPublicKey: Boolean(publicKey),
     hasSecretKey: Boolean(secretKey),
     publicKeyMasked: publicKey ? `${publicKey.slice(0, 7)}...${publicKey.slice(-4)}` : null,
