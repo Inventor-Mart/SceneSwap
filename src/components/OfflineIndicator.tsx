@@ -14,7 +14,7 @@ export const OfflineIndicator: React.FC = () => {
     >
       <span className="flex h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
       <WifiOff className="h-4 w-4 text-amber-400 shrink-0" />
-      <span>Offline Mode — Cached SceneSwap data active</span>
+      <span>Offline Mode — Local SceneSwap cache active</span>
     </aside>
   );
 };

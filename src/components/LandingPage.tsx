@@ -1,72 +1,129 @@
-import { Clapperboard, ArrowRight, Sparkles } from 'lucide-react';
-import { soundEngine } from '../utils/soundEngine';
+import React from 'react';
+import {
+  Clapperboard,
+  Users,
+  Sparkles,
+  Play,
+  Crown,
+  Flame,
+  Film,
+  Zap,
+  ArrowRight,
+  Tv,
+  CheckCircle2,
+} from 'lucide-react';
 
 interface LandingPageProps {
   onStartParty: () => void;
-  onQuickDemo?: () => void;
-  onOpenPass?: () => void;
+  onQuickDemo: () => void;
+  onOpenPass: () => void;
 }
 
-export function LandingPage({ onStartParty }: LandingPageProps) {
-  const handleContinue = () => {
-    soundEngine.playDialogueBlip(1.1);
-    onStartParty();
-  };
-
+export function LandingPage({
+  onStartParty,
+  onQuickDemo,
+  onOpenPass,
+}: LandingPageProps) {
   return (
-    <div className="relative min-h-[75vh] flex flex-col items-center justify-center text-center px-4 py-12 max-w-2xl mx-auto animate-in fade-in duration-300">
-      {/* Subtle Ambient Backlight */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 sm:w-96 h-72 sm:h-96 bg-purple-600/15 blur-[90px] rounded-full pointer-events-none" />
+    <div className="flex flex-col items-center justify-center space-y-10 py-6 px-3 sm:px-6 max-w-4xl mx-auto text-center">
+      {/* Hero Badge */}
+      <div className="inline-flex items-center gap-2 rounded-full border border-purple-500/30 bg-purple-950/40 px-3.5 py-1 text-xs font-bold text-purple-300 shadow-md">
+        <Sparkles className="h-3.5 w-3.5 text-purple-400 animate-spin" />
+        <span>The Live Party Screenplay Game</span>
+      </div>
 
-      {/* Brand Icon Badge */}
-      <div className="relative mb-6">
-        <div className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-3xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 shadow-[0_0_30px_rgba(168,85,247,0.45)] border border-white/20">
-          <Clapperboard className="h-8 w-8 sm:h-10 sm:w-10 text-white" />
+      {/* Hero Title & Subtitle */}
+      <div className="space-y-4 max-w-2xl">
+        <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white leading-tight">
+          Turn Any Hangout Into an{' '}
+          <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-amber-300 bg-clip-text text-transparent">
+            Interactive Film Set
+          </span>
+        </h1>
+        <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
+          Cast your friends into hilarious, high-stakes 3-act scripts. Perform lines on a teleprompter, cue Hollywood sound effects, and vote on dramatic plot twists live!
+        </p>
+      </div>
+
+      {/* Primary Action Buttons */}
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-3 w-full sm:w-auto">
+        <button
+          type="button"
+          onClick={onStartParty}
+          className="flex items-center justify-center gap-2 w-full sm:w-auto rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-amber-500 px-7 py-3.5 text-sm font-black text-white hover:brightness-110 transition shadow-[0_0_30px_rgba(168,85,247,0.35)] active:scale-95 cursor-pointer"
+        >
+          <Clapperboard className="h-4 w-4" />
+          <span>Start Party Shoot (2–5 Players)</span>
+          <ArrowRight className="h-4 w-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={onQuickDemo}
+          className="flex items-center justify-center gap-2 w-full sm:w-auto rounded-2xl border border-white/15 bg-white/5 hover:bg-white/10 px-5 py-3.5 text-sm font-bold text-slate-200 transition active:scale-95 cursor-pointer"
+        >
+          <Play className="h-4 w-4 text-purple-400" />
+          <span>Quick 1-Click Shoot</span>
+        </button>
+      </div>
+
+      {/* Feature Highlights Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full text-left pt-6">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4.5 space-y-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-500/20 text-purple-300">
+            <Users className="h-5 w-5" />
+          </div>
+          <h3 className="text-sm font-bold text-white">Cast Your Friends</h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Upload custom avatar photos or use smart AI likenesses to match roles, archetypes, and hidden motivations.
+          </p>
         </div>
-        <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75" />
-          <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-pink-500" />
-        </span>
+
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4.5 space-y-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-pink-500/20 text-pink-300">
+            <Tv className="h-5 w-5" />
+          </div>
+          <h3 className="text-sm font-bold text-white">TikTok & Stage Views</h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Perform in full 9:16 vertical video mode with teleprompter auto-scroll, camera angle cycler, and 18 film backdrops.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4.5 space-y-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300">
+            <Zap className="h-5 w-5" />
+          </div>
+          <h3 className="text-sm font-bold text-white">Gen Z Party Soundboard</h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Vine Boom, dramatic violin sting, record scratch, boing, thunder, and crowd cheer at the tap of a button.
+          </p>
+        </div>
       </div>
 
-      {/* Header Tag */}
-      <div className="flex items-center gap-1.5 text-xs text-amber-400 font-bold uppercase tracking-widest mb-3">
-        <Sparkles className="h-3.5 w-3.5" />
-        <span>SceneSwap Engine</span>
+      {/* VIP Director Banner */}
+      <div className="w-full rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-950/30 via-slate-950 to-purple-950/30 p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-left">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 text-slate-950 shadow-md">
+            <Crown className="h-5 w-5" />
+          </div>
+          <div>
+            <h4 className="text-xs sm:text-sm font-extrabold text-white">
+              VIP Director Pass & Creator Studio
+            </h4>
+            <p className="text-[11px] text-amber-300/80">
+              Unlock 5-act campaigns, photorealistic scene generation, and full vertical script export.
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onOpenPass}
+          className="shrink-0 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2 text-xs font-black text-slate-950 hover:brightness-110 transition shadow cursor-pointer"
+        >
+          View Plans & Pricing
+        </button>
       </div>
-
-      {/* Main Title */}
-      <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight mb-4">
-        Turn Any Hangout Into An{' '}
-        <span className="bg-gradient-to-r from-amber-400 via-pink-400 to-purple-400 bg-clip-text text-transparent">
-          Interactive Film Set
-        </span>
-      </h1>
-
-      {/* Concise Description */}
-      <p className="text-sm sm:text-base text-slate-300 max-w-lg mb-8 leading-relaxed">
-        Cast your friends into personalized movie scenes with live teleprompter lines,
-        viral sound effects, and audience choice voting.
-      </p>
-
-      {/* Quiet Unboxed Metadata */}
-      <div className="flex items-center gap-2.5 text-xs text-slate-400 mb-9 font-medium">
-        <span>2–8 Players</span>
-        <span aria-hidden="true" className="text-slate-600">·</span>
-        <span>5 Film Genres</span>
-        <span aria-hidden="true" className="text-slate-600">·</span>
-        <span>Live Teleprompter</span>
-      </div>
-
-      {/* Single Clean Continue Button */}
-      <button
-        type="button"
-        onClick={handleContinue}
-        className="group relative flex items-center gap-2.5 rounded-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 px-8 py-4 text-base font-black text-white shadow-[0_0_35px_rgba(168,85,247,0.4)] transition hover:brightness-110 hover:shadow-[0_0_45px_rgba(168,85,247,0.6)] active:scale-95 cursor-pointer"
-      >
-        <span>Continue</span>
-        <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-      </button>
     </div>
   );
 }

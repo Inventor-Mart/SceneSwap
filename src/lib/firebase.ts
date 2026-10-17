@@ -1,10 +1,13 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import {
   getFirestore,
-  initializeFirestore,
   doc,
   setDoc,
   getDoc,
+  collection,
+  query,
+  getDocs,
+  type Firestore,
 } from 'firebase/firestore';
 import {
   getAuth,
@@ -14,168 +17,205 @@ import {
   createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  type Auth,
   type User,
 } from 'firebase/auth';
+import firebaseAppletConfig from '../../firebase-applet-config.json';
 
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
+/**
+ * SceneSwap Firebase Configuration
+ */
+export interface SceneSwapFirebaseConfig {
+  projectId: string;
+  appId: string;
+  apiKey: string;
+  authDomain?: string;
+  firestoreDatabaseId?: string;
+  storageBucket?: string;
+  messagingSenderId?: string;
 }
 
-export interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  };
-}
-
-export const firebaseConfig = {
-  projectId: "sonorous-heading-pn2tx",
-  appId: "1:865139828790:web:524b53949759fd6ec8d097",
-  apiKey: "AIzaSyDPGLnZ3pzPFef8Cz4aSreBL5ZUmhZozXw",
-  authDomain: "sonorous-heading-pn2tx.firebaseapp.com",
-  firestoreDatabaseId: "ai-studio-alteregosceneswa-18262271-a1fe-4ea8-9882-dbf4dc44f9fa",
-  storageBucket: "sonorous-heading-pn2tx.firebasestorage.app",
-  messagingSenderId: "865139828790",
-  measurementId: "",
-  oAuthClientId: "865139828790-3skp7ovpj93qh8flark2nmchmrl23uqh.apps.googleusercontent.com",
+const defaultFirebaseConfig: SceneSwapFirebaseConfig = {
+  projectId: firebaseAppletConfig.projectId,
+  appId: firebaseAppletConfig.appId,
+  apiKey: firebaseAppletConfig.apiKey,
+  authDomain: firebaseAppletConfig.authDomain,
+  firestoreDatabaseId: firebaseAppletConfig.firestoreDatabaseId,
+  storageBucket: firebaseAppletConfig.storageBucket,
+  messagingSenderId: firebaseAppletConfig.messagingSenderId,
 };
 
-// Initialize Firebase App
-export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-
-// Initialize Firestore with long-polling to prevent WebSocket backend timeouts in preview/proxy environments
-function createFirestoreInstance() {
+function getStoredSceneSwapConfig(): SceneSwapFirebaseConfig | null {
+  if (typeof window === 'undefined') return null;
   try {
-    return initializeFirestore(
-      app,
-      {
-        experimentalForceLongPolling: true,
-        experimentalAutoDetectLongPolling: true,
-      },
-      firebaseConfig.firestoreDatabaseId
-    );
-  } catch {
-    return getFirestore(app, firebaseConfig.firestoreDatabaseId);
+    const raw = localStorage.getItem('sceneswap_firebase_config');
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn('Error reading SceneSwap firebase config:', e);
+  }
+  return null;
+}
+
+export const activeSceneSwapConfig: SceneSwapFirebaseConfig =
+  getStoredSceneSwapConfig() || defaultFirebaseConfig;
+
+export const isSceneSwapFirebaseConfigured = true;
+
+// Initialize Firebase App
+export const app: FirebaseApp = !getApps().length
+  ? initializeApp(activeSceneSwapConfig)
+  : getApp();
+
+export const db: Firestore = getFirestore(
+  app,
+  activeSceneSwapConfig.firestoreDatabaseId || '(default)'
+);
+
+export const auth: Auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
+
+export function setRuntimeSceneSwapFirebaseConfig(cfg: SceneSwapFirebaseConfig) {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('sceneswap_firebase_config', JSON.stringify(cfg));
+    window.location.reload();
   }
 }
 
-export const db = createFirestoreInstance();
-
-// Initialize Firebase Auth
-export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
-
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): void {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
-    },
-    operationType,
-    path
-  };
-  console.warn('Firestore Operation Notice (operating in local fallback):', JSON.stringify(errInfo));
+// SceneSwap Saved Shoot Interface
+export interface SceneSwapSavedShoot {
+  id: string;
+  title: string;
+  genre: string;
+  players: string[];
+  chaptersCount: number;
+  lastChapterNumber: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
-// Validate connection safely without blocking UI or triggering 10s backend timeouts
-export async function testConnection(): Promise<boolean> {
+export interface SavedSceneSwapData {
+  activeChapter?: any;
+  partyPlayers?: string[];
+  playerCustomPhotos?: Record<string, string>;
+  selectedGenre?: string;
+  premiseSeed?: string;
+  activeScriptMode?: 'comic' | 'studio' | 'stage' | 'portrait';
+  isSoundMuted?: boolean;
+  isDirectorPro?: boolean;
+  updatedAt?: string;
+  [key: string]: any;
+}
+
+/**
+ * Save user session data to Firestore and LocalStorage
+ */
+export async function saveUserSceneSwapData(userId: string, data: Partial<SavedSceneSwapData>): Promise<void> {
   try {
-    if (!auth.currentUser) {
-      return true; // Local-first mode ready
+    const raw = localStorage.getItem(`sceneswap_user_${userId}`) || '{}';
+    const merged = { ...JSON.parse(raw), ...data, updatedAt: new Date().toISOString() };
+    localStorage.setItem(`sceneswap_user_${userId}`, JSON.stringify(merged));
+  } catch (e) {
+    console.warn('Failed to save user data locally:', e);
+  }
+
+  if (db && userId) {
+    try {
+      const userRef = doc(db, 'users', userId);
+      await setDoc(userRef, data, { merge: true });
+    } catch (err) {
+      console.warn('Failed to sync user data to Firestore:', err);
     }
-    const userDocRef = doc(db, 'users', auth.currentUser.uid);
-    const snap = await getDoc(userDocRef);
-    return snap.exists();
-  } catch (error) {
-    console.warn('Firebase connection check:', error);
+  }
+}
+
+/**
+ * Load user session data from Firestore or LocalStorage
+ */
+export async function loadUserSceneSwapData(userId: string): Promise<SavedSceneSwapData | null> {
+  if (db && userId) {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const snap = await getDoc(userRef);
+      if (snap.exists()) {
+        return snap.data() as SavedSceneSwapData;
+      }
+    } catch (err) {
+      console.warn('Error loading user data from Firestore:', err);
+    }
+  }
+
+  try {
+    const raw = localStorage.getItem(`sceneswap_user_${userId}`);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/**
+ * Connectivity test probe
+ */
+export async function testConnection(): Promise<boolean> {
+  if (!db) return false;
+  try {
+    const testDoc = doc(db, 'test', 'probe');
+    await getDoc(testDoc);
+    return true;
+  } catch {
     return false;
   }
 }
 
-// Data synchronization interfaces for SceneSwap
-export interface SavedSceneSwapData {
-  activeChapter: any;
-  partyPlayers: string[];
-  playerCustomPhotos: Record<string, string>;
-  selectedGenre: string;
-  premiseSeed: string;
-  activeScriptMode: 'comic' | 'studio';
-  isSoundMuted: boolean;
-  isDirectorPro?: boolean;
-  subscriptionTier?: string;
-  updatedAt: string;
-}
-
 /**
- * Save user SceneSwap active session, cast roster, and custom avatars to Firestore
+ * Save a SceneSwap shoot to Firestore (or local storage fallback)
  */
-export async function saveUserSceneSwapData(userId: string, data: Partial<SavedSceneSwapData>): Promise<void> {
-  if (!userId) return;
-  const userPath = `users/${userId}`;
-  const sessionPath = `users/${userId}/sceneswap/session`;
-  const payload = {
-    ...data,
-    updatedAt: new Date().toISOString(),
-  };
-
+export async function saveSceneSwapShoot(shoot: SceneSwapSavedShoot, userId?: string) {
   try {
-    const userRef = doc(db, 'users', userId);
-    await setDoc(userRef, {
-      uid: userId,
-      is_director_pro: data.isDirectorPro ?? false,
-      updated_at: new Date().toISOString(),
-    }, { merge: true });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, userPath);
-  }
-
-  try {
-    const sessionRef = doc(db, 'users', userId, 'sceneswap', 'session');
-    await setDoc(sessionRef, payload, { merge: true });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, sessionPath);
-  }
-}
-
-/**
- * Load user SceneSwap active session and cast roster from Firestore
- */
-export async function loadUserSceneSwapData(userId: string): Promise<SavedSceneSwapData | null> {
-  if (!userId) return null;
-  const sessionPath = `users/${userId}/sceneswap/session`;
-  try {
-    const sessionRef = doc(db, 'users', userId, 'sceneswap', 'session');
-    const snap = await getDoc(sessionRef);
-    if (snap.exists()) {
-      return snap.data() as SavedSceneSwapData;
+    const raw = localStorage.getItem('sceneswap_shoots_history') || '[]';
+    const list: SceneSwapSavedShoot[] = JSON.parse(raw);
+    const existingIdx = list.findIndex(s => s.id === shoot.id);
+    if (existingIdx >= 0) {
+      list[existingIdx] = shoot;
+    } else {
+      list.unshift(shoot);
     }
-    return null;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, sessionPath);
-    return null;
+    localStorage.setItem('sceneswap_shoots_history', JSON.stringify(list.slice(0, 20)));
+  } catch (e) {
+    console.warn('Failed to save shoot locally', e);
+  }
+
+  if (db && userId) {
+    try {
+      const shootRef = doc(db, 'users', userId, 'sceneswap_shoots', shoot.id);
+      await setDoc(shootRef, shoot, { merge: true });
+    } catch (err) {
+      console.warn('Failed to sync shoot to SceneSwap Firestore', err);
+    }
+  }
+}
+
+/**
+ * Retrieve saved SceneSwap shoots
+ */
+export async function getSceneSwapShoots(userId?: string): Promise<SceneSwapSavedShoot[]> {
+  if (db && userId) {
+    try {
+      const shootsRef = collection(db, 'users', userId, 'sceneswap_shoots');
+      const snap = await getDocs(query(shootsRef));
+      if (!snap.empty) {
+        return snap.docs.map(d => d.data() as SceneSwapSavedShoot);
+      }
+    } catch (err) {
+      console.warn('Error fetching shoots from Firestore, using local cache', err);
+    }
+  }
+
+  try {
+    const raw = localStorage.getItem('sceneswap_shoots_history') || '[]';
+    return JSON.parse(raw);
+  } catch {
+    return [];
   }
 }
 

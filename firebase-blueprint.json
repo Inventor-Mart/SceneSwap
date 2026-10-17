@@ -1,0 +1,98 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "SceneSwap user account profile and VIP Director subscription state",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Unique Firebase Authentication UID"
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Director name or display alias"
+        },
+        "is_director_pro": {
+          "type": "boolean",
+          "description": "Whether user has unlocked SceneSwap VIP Director Pass"
+        },
+        "created_at": {
+          "type": "string",
+          "description": "ISO timestamp of account creation"
+        },
+        "updated_at": {
+          "type": "string",
+          "description": "ISO timestamp of latest update"
+        }
+      },
+      "required": ["uid", "email"]
+    },
+    "SceneSwapProject": {
+      "title": "SceneSwapProject",
+      "description": "Interactive screenplay project, cast, locked visual bible, and branch decisions",
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Owner Firebase UID"
+        },
+        "project_id": {
+          "type": "string",
+          "description": "Unique project identifier"
+        },
+        "title": {
+          "type": "string",
+          "description": "Screenplay title"
+        },
+        "genre": {
+          "type": "string",
+          "description": "Film genre (e.g. Sci-Fi Thriller, Afro-Heist, Cyber-Detective, Nollywood Drama)"
+        },
+        "tone": {
+          "type": "string",
+          "description": "Cinematic tone and pacing"
+        },
+        "current_act": {
+          "type": "number",
+          "description": "Current act progression (1 to 3)"
+        },
+        "cast": {
+          "type": "array",
+          "description": "Ensemble cast members and assigned roles"
+        },
+        "custom_avatars": {
+          "type": "object",
+          "description": "Uploaded real user photo likenesses for cast"
+        },
+        "directors_cut": {
+          "type": "string",
+          "description": "Exported screenplay script and choices log"
+        },
+        "created_at": {
+          "type": "string",
+          "description": "Creation timestamp"
+        },
+        "updated_at": {
+          "type": "string",
+          "description": "Latest update timestamp"
+        }
+      },
+      "required": ["user_id", "title"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Top-level user profile keyed by Firebase Auth UID"
+    },
+    "/users/{userId}/sceneswap/{projectId}": {
+      "schema": "SceneSwapProject",
+      "description": "User SceneSwap screenplay projects, branch decisions, and directors cut scripts"
+    }
+  }
+}

@@ -8,3 +8,5 @@ coverage/
 .env*
 !.env.example
 test_res*.json
+server.js
+

@@ -1,5 +1,6 @@
 import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 import { generateDynamicSceneSvg } from "../utils/characterConsistency.ts";
+import { getSmartSceneBackdrop } from "../utils/sceneVisualEngine.ts";
 
 function getGeminiClient(): GoogleGenAI | null {
   const apiKey =
@@ -739,6 +740,7 @@ export interface RealisticImageRequest {
     archetype: string;
     secret?: string;
   };
+  variationIndex?: number;
 }
 
 export interface RealisticImageResponse {
@@ -964,8 +966,14 @@ export function getFallbackRealisticImage(inputs: RealisticImageRequest): string
     return '/images/characters/socialite.jpg';
   }
 
-  // Return high-resolution realistic cinematic scene photograph matching genre and act
-  return getSceneBackdropImage(inputs.genre || 'Nollywood Drama', inputs.chapter_number || 1);
+  // Return high-resolution realistic cinematic scene photograph matching setting and act
+  return getSmartSceneBackdrop({
+    genre: inputs.genre || 'Nollywood Drama',
+    chapterNumber: inputs.chapter_number || 1,
+    settingDescription: inputs.setting_description || inputs.scene_heading || '',
+    tone: inputs.tone || '',
+    variationIndex: inputs.variationIndex || 0,
+  }).url;
 }
 
 

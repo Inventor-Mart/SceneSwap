@@ -2,5 +2,7 @@
   "name": "SceneSwap • Party Script Engine",
   "description": "Turn any hangout into an interactive film set where friends star in personalized, branching scripts with teleprompter navigation, soundboard effects, and live choice voting.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

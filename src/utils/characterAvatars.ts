@@ -491,11 +491,9 @@ export function getRealisticCharacterPhoto(
     return GENRE_STOCK_PORTRAITS.rogue;
   }
 
-  // Always return high quality photographic portraits, never geometric SVG human shapes
-  if (gender === 'female') {
-    return GENRE_STOCK_PORTRAITS.socialite || NIGERIAN_PORTRAITS.femaleYoung || '/images/characters/socialite.jpg';
-  }
-  return GENRE_STOCK_PORTRAITS.heir || NIGERIAN_PORTRAITS.maleYoung || '/images/characters/heir.jpg';
+  // Return the dynamic photorealistic vector avatar crafted specifically
+  // for this nationality and gender
+  return generateNationalityAvatarSvg(cleanName, role, nationalityInfo, gender);
 }
 
 // Fallback vector generator

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Crown,
   Check,
@@ -13,6 +13,9 @@ import {
   Flame,
   Star,
   Download,
+  Key,
+  ExternalLink,
+  Lock,
 } from 'lucide-react';
 import { soundEngine } from '../utils/soundEngine';
 
@@ -42,6 +45,57 @@ export function SubscriptionModal({
   );
   const [isProcessing, setIsProcessing] = useState(false);
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
+
+  // Paystack Live / Test Mode Status & Config
+  const [paystackStatus, setPaystackStatus] = useState<any>(null);
+  const [showGatewayConfig, setShowGatewayConfig] = useState(false);
+  const [livePubKey, setLivePubKey] = useState('');
+  const [liveSecKey, setLiveSecKey] = useState('');
+  const [isSavingKeys, setIsSavingKeys] = useState(false);
+  const [keySaveMessage, setKeySaveMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch('/api/services/status')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.paystack) {
+          setPaystackStatus(data.paystack);
+        }
+      })
+      .catch((err) => console.warn('Could not fetch services status:', err));
+  }, [isOpen]);
+
+  async function handleSaveLiveKeys() {
+    if (!livePubKey.trim() && !liveSecKey.trim()) return;
+    setIsSavingKeys(true);
+    setKeySaveMessage(null);
+    try {
+      const res = await fetch('/api/services/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paystack: {
+            publicKey: livePubKey.trim() || undefined,
+            secretKey: liveSecKey.trim() || undefined,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (data?.paystack) {
+        setPaystackStatus(data.paystack);
+        setKeySaveMessage(data.paystack.mode === 'live' ? '✅ Switched to Live Production Mode!' : '✅ Paystack keys updated!');
+        setTimeout(() => {
+          setShowGatewayConfig(false);
+          setKeySaveMessage(null);
+        }, 1500);
+      }
+    } catch (err: any) {
+      setKeySaveMessage(`Failed to update keys: ${err?.message || err}`);
+    } finally {
+      setIsSavingKeys(false);
+    }
+  }
 
   if (!isOpen) return null;
 
@@ -418,35 +472,108 @@ export function SubscriptionModal({
           </div>
         )}
 
-        {/* Footer Actions: Paystack Checkout & Instant Demo Unlock */}
+        {/* Paystack Gateway Configuration Drawer */}
+        {showGatewayConfig && (
+          <div className="rounded-2xl border border-amber-500/30 bg-black/80 p-4 space-y-3 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck className="h-4 w-4 text-amber-400" />
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Paystack Mode & Live Key Setup
+                </h4>
+              </div>
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
+                paystackStatus?.mode === 'live' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+              }`}>
+                Current: {paystackStatus?.mode === 'live' ? 'LIVE MODE (Real Charges)' : 'TEST MODE (Simulated / Test Banner)'}
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Paystack automatically displays <strong className="text-amber-300">&ldquo;TEST&rdquo;</strong> across the checkout page when test keys (<code className="text-amber-300">pk_test_...</code> / <code className="text-amber-300">sk_test_...</code>) are used.
+              To accept real payments and remove the test badge, paste your <strong className="text-emerald-300">Live API Keys</strong> from <a href="https://dashboard.paystack.com/#/settings/developer" target="_blank" rel="noreferrer" className="text-emerald-400 underline font-semibold">dashboard.paystack.com</a> below:
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 block mb-1">
+                  Paystack Public Key (Live: pk_live_... or Test: pk_test_...)
+                </label>
+                <input
+                  type="text"
+                  placeholder={paystackStatus?.publicKeyMasked || "pk_live_..."}
+                  value={livePubKey}
+                  onChange={(e) => setLivePubKey(e.target.value)}
+                  className="w-full rounded-xl border border-white/15 bg-black/60 px-3 py-1.5 text-xs font-mono text-white placeholder:text-slate-600 focus:border-amber-400 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 block mb-1">
+                  Paystack Secret Key (Live: sk_live_... or Test: sk_test_...)
+                </label>
+                <input
+                  type="password"
+                  placeholder={paystackStatus?.secretKeyMasked || "sk_live_..."}
+                  value={liveSecKey}
+                  onChange={(e) => setLiveSecKey(e.target.value)}
+                  className="w-full rounded-xl border border-white/15 bg-black/60 px-3 py-1.5 text-xs font-mono text-white placeholder:text-slate-600 focus:border-amber-400 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {keySaveMessage && (
+              <p className={`text-xs font-bold ${keySaveMessage.startsWith('✅') ? 'text-emerald-300' : 'text-rose-400'}`}>
+                {keySaveMessage}
+              </p>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowGatewayConfig(false)}
+                className="px-3 py-1.5 rounded-lg border border-white/10 text-xs text-slate-400 hover:text-white"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveLiveKeys}
+                disabled={isSavingKeys || (!livePubKey.trim() && !liveSecKey.trim())}
+                className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 text-xs font-black text-slate-950 hover:brightness-110 disabled:opacity-50 transition cursor-pointer"
+              >
+                {isSavingKeys ? 'Activating...' : 'Activate Live Mode'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Footer Actions: Paystack Checkout */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3">
-          <div className="flex items-center gap-2 text-[11px] text-slate-400">
+          <div className="flex items-center gap-2 text-[11px] text-slate-400 flex-wrap">
             <ShieldCheck className="h-4 w-4 text-emerald-400" />
             <span>Paystack 256-bit SSL Encrypted · Instant Receipt via Email</span>
+            {paystackStatus && (
+              <button
+                type="button"
+                onClick={() => setShowGatewayConfig(!showGatewayConfig)}
+                className="text-[10px] text-slate-500 hover:text-amber-300 transition cursor-pointer underline ml-1"
+                title="Configure Live Paystack Keys"
+              >
+                {paystackStatus.mode === 'live' ? '🟢 Live' : '⚙️ Gateway Settings'}
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* 1-Click Instant Demo Activation for Testing */}
-            <button
-              type="button"
-              onClick={handleInstantDemoUnlock}
-              title="Instant unlock without entering card for preview testing"
-              className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-300 hover:bg-amber-500/20 transition active:scale-95 cursor-pointer flex items-center gap-1.5"
-            >
-              <Zap className="h-3.5 w-3.5 text-amber-400" />
-              <span>⚡ Instant Demo Unlock</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleCheckout(selectedTier)}
-              disabled={isProcessing}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-pink-500 px-4 py-2 text-xs font-black text-slate-950 hover:brightness-110 transition shadow-lg active:scale-95 cursor-pointer disabled:opacity-50"
-            >
-              <CreditCard className="h-3.5 w-3.5" />
-              <span>Pay & Activate ({currency === 'NGN' ? pricing[selectedTier === 'free' ? 'vip_director' : selectedTier].NGN : pricing[selectedTier === 'free' ? 'vip_director' : selectedTier].USD})</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => handleCheckout(selectedTier)}
+            disabled={isProcessing}
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-pink-500 px-5 py-2.5 text-xs font-black text-slate-950 hover:brightness-110 transition shadow-lg active:scale-95 cursor-pointer disabled:opacity-50"
+          >
+            <CreditCard className="h-3.5 w-3.5" />
+            <span>Pay & Activate ({currency === 'NGN' ? pricing[selectedTier === 'free' ? 'vip_director' : selectedTier].NGN : pricing[selectedTier === 'free' ? 'vip_director' : selectedTier].USD})</span>
+          </button>
         </div>
       </div>
     </div>

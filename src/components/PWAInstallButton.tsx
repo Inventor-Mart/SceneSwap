@@ -102,15 +102,15 @@ export const PWAInstallButton: React.FC = () => {
       {showGuide && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
           <div className="w-full max-w-md rounded-3xl border border-amber-400/50 bg-gradient-to-b from-slate-950 via-[#130726] to-black p-5 shadow-[0_0_40px_rgba(245,158,11,0.3)] text-white">
-            <div className="flex items-center justify-between border-amber-400/20 pb-3 border-b">
+            <div className="flex items-center justify-between border-b border-amber-400/20 pb-3">
               <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/30">
                   <Sparkles className="h-4 w-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-white">SceneSwap Installation</h3>
+                  <h3 className="text-sm font-extrabold text-white">SceneSwap Studio Installation</h3>
                   <p className="text-[10px] text-amber-300/80 font-mono">
-                    Party Script Engine • Home Screen, Dock or Desktop
+                    SceneSwap • Home Screen, Dock or Desktop
                   </p>
                 </div>
               </div>

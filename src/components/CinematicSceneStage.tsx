@@ -37,37 +37,20 @@ import {
   extractCharacterActionBeats,
   generateDynamicSceneSvg,
 } from '../utils/characterConsistency';
+import { getSmartSceneBackdrop } from '../utils/sceneVisualEngine';
 
-export function getDefaultRealisticSceneImage(genre: string, chapter: number): string {
-  const ch = Math.min(Math.max(chapter || 1, 1), 3);
-  if (genre.includes('Sci-Fi')) {
-    if (ch === 1) return '/images/scenes/scifi_act1.jpg';
-    if (ch === 2) return '/images/scenes/scifi_act2.jpg';
-    return '/images/scenes/scifi_act3.jpg';
-  }
-  if (genre.includes('Afro') || genre.includes('Heist')) {
-    if (ch === 1) return '/images/scenes/heist_act1.jpg';
-    if (ch === 2) return '/images/scenes/heist_act2.jpg';
-    return '/images/scenes/heist_act3.jpg';
-  }
-  if (genre.includes('Horror')) {
-    if (ch === 1) return '/images/scenes/horror_act1.jpg';
-    if (ch === 2) return '/images/scenes/horror_act2.jpg';
-    return '/images/scenes/horror_act3.jpg';
-  }
-  if (genre.includes('Rom') || genre.includes('Comedy')) {
-    if (ch === 1) return '/images/scenes/romcom_act1.jpg';
-    if (ch === 2) return '/images/scenes/romcom_act2.jpg';
-    return '/images/scenes/romcom_act3.jpg';
-  }
-  if (genre.includes('Cyber') || genre.includes('Detective')) {
-    if (ch === 1) return '/images/scenes/detective_act1.jpg';
-    if (ch === 2) return '/images/scenes/detective_act2.jpg';
-    return '/images/scenes/detective_act3.jpg';
-  }
-  if (ch === 1) return '/images/scenes/nollywood_act1.jpg';
-  if (ch === 2) return '/images/scenes/nollywood_act2.jpg';
-  return '/images/scenes/nollywood_act3.jpg';
+export function getDefaultRealisticSceneImage(
+  genre: string,
+  chapter: number,
+  settingDescription: string = '',
+  variationIndex: number = 0
+): string {
+  return getSmartSceneBackdrop({
+    genre,
+    chapterNumber: chapter,
+    settingDescription,
+    variationIndex,
+  }).url;
 }
 
 export interface CastMember {

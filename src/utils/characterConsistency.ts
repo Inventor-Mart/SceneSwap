@@ -4,7 +4,7 @@
 // across all acts and scene branches for graphic novel & cinematic consistency.
 // ============================================================================
 
-import { detectNameNationality, detectGenderAffinity } from './characterAvatars.ts';
+import { detectNameNationality, detectGenderAffinity } from './characterAvatars';
 
 export interface LockedCharacterVisual {
   player: string;
@@ -171,34 +171,30 @@ const WARDROBE_PRESETS: Record<string, { wardrobe: string; props: string }[]> = 
  * the characters have 100% consistent faces, hair, wardrobe, and props across all scenes.
  */
 export function lockOrGetCharacterVisualBible(
-  cast: Array<{ player: string; role: string; archetype?: string; motivation?: string }> = [],
-  genre: string = 'Nollywood Drama',
+  cast: Array<{ player: string; role: string; archetype?: string; motivation?: string }>,
+  genre: string,
   customPhotos: Record<string, string> = {}
 ): CharacterVisualBible {
   const existing = getStoredVisualBible();
   let updated = { ...existing };
   let hasNew = false;
-  const safeCast = Array.isArray(cast) ? cast : [];
 
-  const genreStr = String(genre || '');
-  const normalizedGenre = genreStr.toLowerCase().includes('scifi') || genreStr.toLowerCase().includes('sci-fi')
+  const normalizedGenre = genre.toLowerCase().includes('scifi') || genre.toLowerCase().includes('sci-fi')
     ? 'scifi'
-    : genreStr.toLowerCase().includes('heist')
+    : genre.toLowerCase().includes('heist')
     ? 'heist'
-    : genreStr.toLowerCase().includes('cyber')
+    : genre.toLowerCase().includes('cyber')
     ? 'cyberpunk'
-    : genreStr.toLowerCase().includes('horror')
+    : genre.toLowerCase().includes('horror')
     ? 'horror'
-    : genreStr.toLowerCase().includes('nollywood') || genreStr.toLowerCase().includes('afro')
+    : genre.toLowerCase().includes('nollywood') || genre.toLowerCase().includes('afro')
     ? 'nollywood'
     : 'default';
 
   const presets = WARDROBE_PRESETS[normalizedGenre] || WARDROBE_PRESETS.default;
 
-  safeCast.forEach((member, index) => {
-    if (!member || !member.player) return;
-    const key = String(member.player).toLowerCase().trim();
-    if (!key) return;
+  cast.forEach((member, index) => {
+    const key = member.player.toLowerCase().trim();
     if (!updated[key]) {
       hasNew = true;
       const nationality = detectNameNationality(member.player);
@@ -297,7 +293,7 @@ export function extractPhysicalSceneAction(
   ].join(' ').toLowerCase();
 
   if (/fight|punch|kick|brawl|clash|attack|strike|weapon|sword|gun|shoot|combat|duel|tackle/.test(combinedText)) {
-    return 'HIGH-OCTANE PHYSICAL COMBAT: The characters are in dynamic, mid-action combat—striking, defending, weapons drawn or clashing hand-to-hand with kinetic energy, debris and dramatic motion blur like a premier cinematic live-action film sequence.';
+    return 'HIGH-OCTANE PHYSICAL COMBAT: The characters are in dynamic, mid-action combat—striking, defending, weapons drawn or clashing hand-to-hand with kinetic energy, debris and dramatic motion blur like a premier graphic novel fight splash page.';
   }
 
   if (/chase|run|flee|escape|sprint|pursue|dash|vehicle|drive/.test(combinedText)) {
@@ -336,27 +332,15 @@ export interface CharacterActionBeat {
 }
 
 export function extractCharacterActionBeats(
-  scriptLines: Array<{ speaker: string; direction?: string; line: string }> = [],
-  cast: Array<{ player: string; role: string }> = [],
-  bible: CharacterVisualBible = {}
+  scriptLines: Array<{ speaker: string; direction?: string; line: string }>,
+  cast: Array<{ player: string; role: string }>,
+  bible: CharacterVisualBible
 ): CharacterActionBeat[] {
-  const safeCast = Array.isArray(cast) ? cast : [];
-  const safeLines = Array.isArray(scriptLines) ? scriptLines : [];
-  const safeBible = bible || {};
-
-  return safeCast.map((member) => {
-    if (!member || !member.player) {
-      return {
-        player: 'Actor',
-        role: 'Performer',
-        action: 'Visually reacting in the scene with intense focus and body language',
-        dialogue: '',
-      };
-    }
-    const key = String(member.player).toLowerCase().trim();
-    const locked = safeBible[key];
-    const memberLines = safeLines.filter(
-      (l) => l && typeof l.speaker === 'string' && l.speaker.toLowerCase().trim() === key
+  return cast.map((member) => {
+    const key = member.player.toLowerCase().trim();
+    const locked = bible[key];
+    const memberLines = scriptLines.filter(
+      (l) => l.speaker.toLowerCase().trim() === key
     );
 
     const actions = memberLines
@@ -365,13 +349,13 @@ export function extractCharacterActionBeats(
       .join('; ');
 
     const dialogues = memberLines
-      .map((l) => `"${l.line || ''}"`)
+      .map((l) => `"${l.line}"`)
       .slice(0, 2)
       .join(' / ');
 
     return {
       player: member.player,
-      role: member.role || 'Actor',
+      role: member.role,
       action: actions || 'Visually reacting in the scene with intense focus and body language',
       dialogue: dialogues || '',
       wardrobe: locked?.wardrobe,
@@ -381,254 +365,222 @@ export function extractCharacterActionBeats(
 }
 
 /**
- * Helper to escape text for safe SVG rendering
+ * Resolve high-fidelity photographic scene image strictly matching the SCENE HEADING
+ * and genre environment. Uses real cinematic photography, never geometric shapes!
  */
-function escapeSvg(unsafe: string = ''): string {
-  return String(unsafe || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
-/**
- * Word wrap helper for SVG text rendering
- */
-function wrapSvgLines(text: string, maxChars: number = 38): string[] {
-  const clean = String(text || '').replace(/\s+/g, ' ').trim();
-  if (!clean) return [];
-  const words = clean.split(' ');
-  const lines: string[] = [];
-  let current = '';
-
-  for (const word of words) {
-    if ((current + ' ' + word).trim().length <= maxChars) {
-      current = (current + ' ' + word).trim();
-    } else {
-      if (current) lines.push(current);
-      current = word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines;
-}
-
-/**
- * Generate a dynamic high-fidelity graphic novel scene SVG that directly
- * renders the exact SCENE HEADING, the CHARACTERS performing their physical actions,
- * and their spoken DIALOGUES in authentic comic splash panel style (no geometric shapes).
- */
-export function generateDynamicSceneSvg(
+export function resolveRealisticSceneImage(
   sceneHeading: string = '',
   genre: string = '',
-  characterBeats: CharacterActionBeat[] = [],
-  aspectRatio: '9:16' | '16:9' = '16:9',
-  activeSpeaker?: string,
-  activeLine?: string,
-  activeDirection?: string,
-  customPortraits: Record<string, string> = {},
-  actNumber: number = 1
+  chapterNumber: number = 1
 ): string {
-  const isPortrait = aspectRatio === '9:16';
-  const width = isPortrait ? 720 : 1280;
-  const height = isPortrait ? 1280 : 720;
+  const heading = (sceneHeading || '').toLowerCase();
+  const g = (genre || '').toLowerCase();
+  const ch = Math.min(Math.max(chapterNumber || 1, 1), 3);
 
-  const headingLower = (sceneHeading || '').toLowerCase();
-  const genreLower = (genre || '').toLowerCase();
-
-  // Environment Classification
-  const isScifi = headingLower.includes('airlock') || headingLower.includes('orbit') || headingLower.includes('station') || headingLower.includes('module') || genreLower.includes('sci-fi');
-  const isBallroom = headingLower.includes('ballroom') || headingLower.includes('parlour') || headingLower.includes('manor') || headingLower.includes('mansion') || headingLower.includes('wedding') || headingLower.includes('ikoyi') || headingLower.includes('banquet') || genreLower.includes('nollywood');
-  const isVault = headingLower.includes('vault') || headingLower.includes('safe') || headingLower.includes('junction') || headingLower.includes('heist') || headingLower.includes('bank') || genreLower.includes('heist');
-  const isHorror = headingLower.includes('crypt') || headingLower.includes('grave') || headingLower.includes('attic') || headingLower.includes('manor') || genreLower.includes('horror');
-  const isCyber = headingLower.includes('cyber') || headingLower.includes('neon') || headingLower.includes('alley') || headingLower.includes('detective') || genreLower.includes('cyber') || genreLower.includes('detective');
-
-  // Palette Theme
-  let wallGrad1 = '#1c1917';
-  let wallGrad2 = '#292524';
-  let floorColor = '#0c0a09';
-  let accentColor = '#f59e0b';
-  let glowColor = '#fbbf24';
-  let bannerColor = '#facc15';
-
-  if (isScifi) {
-    wallGrad1 = '#020617';
-    wallGrad2 = '#0f172a';
-    floorColor = '#030712';
-    accentColor = '#06b6d4';
-    glowColor = '#38bdf8';
-    bannerColor = '#38bdf8';
-  } else if (isVault) {
-    wallGrad1 = '#022c22';
-    wallGrad2 = '#064e3b';
-    floorColor = '#021814';
-    accentColor = '#10b981';
-    glowColor = '#34d399';
-    bannerColor = '#10b981';
-  } else if (isHorror) {
-    wallGrad1 = '#180728';
-    wallGrad2 = '#2e1065';
-    floorColor = '#090514';
-    accentColor = '#a855f7';
-    glowColor = '#c084fc';
-    bannerColor = '#c084fc';
-  } else if (isCyber) {
-    wallGrad1 = '#0a0a1a';
-    wallGrad2 = '#1e1b4b';
-    floorColor = '#050510';
-    accentColor = '#ec4899';
-    glowColor = '#a855f7';
-    bannerColor = '#f43f5e';
+  // 1. SCIFI / SPACE / AIRLOCK / ORBIT
+  if (
+    heading.includes('airlock') ||
+    heading.includes('cockpit') ||
+    heading.includes('bridge') ||
+    heading.includes('orbit') ||
+    heading.includes('space') ||
+    heading.includes('station') ||
+    heading.includes('hangar') ||
+    heading.includes('warp') ||
+    g.includes('sci-fi') ||
+    g.includes('scifi')
+  ) {
+    if (ch === 1 || heading.includes('airlock')) return '/images/scenes/scifi_act1.jpg';
+    if (ch === 2 || heading.includes('bridge') || heading.includes('station')) return '/images/scenes/scifi_act2.jpg';
+    return '/images/scenes/scifi_act3.jpg';
   }
 
-  // --- 1. CLEAN ATMOSPHERIC CINEMATIC LIGHTING (NO HARD SHAPES AT TOP OR BOTTOM) ---
-  let environmentElements = '';
-
-  if (isScifi) {
-    // Ambient sci-fi cosmos aura - smooth atmospheric glow, no hard geometric shapes
-    environmentElements = `
-      <radialGradient id="scifiGlow" cx="50%" cy="35%" r="60%">
-        <stop offset="0%" stop-color="#0284c7" stop-opacity="0.35" />
-        <stop offset="60%" stop-color="#0369a1" stop-opacity="0.1" />
-        <stop offset="100%" stop-color="#020617" stop-opacity="0" />
-      </radialGradient>
-      <rect width="${width}" height="${height}" fill="url(#scifiGlow)" />
-      <!-- Subtle cosmic starlight dust -->
-      <circle cx="${width * 0.35}" cy="${height * 0.25}" r="2" fill="#ffffff" opacity="0.6" />
-      <circle cx="${width * 0.65}" cy="${height * 0.3}" r="1.5" fill="#ffffff" opacity="0.5" />
-      <circle cx="${width * 0.5}" cy="${height * 0.2}" r="2.5" fill="#38bdf8" opacity="0.7" />
-    `;
-  } else if (isVault) {
-    // High-tech stealth ambient glow - smooth gradient, no top/bottom slabs
-    environmentElements = `
-      <radialGradient id="vaultGlow" cx="50%" cy="40%" r="65%">
-        <stop offset="0%" stop-color="#059669" stop-opacity="0.25" />
-        <stop offset="70%" stop-color="#022c22" stop-opacity="0.08" />
-        <stop offset="100%" stop-color="#021814" stop-opacity="0" />
-      </radialGradient>
-      <rect width="${width}" height="${height}" fill="url(#vaultGlow)" />
-    `;
-  } else if (isHorror) {
-    // Dramatic gothic vignette glow - mood lighting, no geometric window arches or floor lines
-    environmentElements = `
-      <radialGradient id="horrorGlow" cx="50%" cy="30%" r="60%">
-        <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.3" />
-        <stop offset="60%" stop-color="#3b0764" stop-opacity="0.1" />
-        <stop offset="100%" stop-color="#090514" stop-opacity="0" />
-      </radialGradient>
-      <rect width="${width}" height="${height}" fill="url(#horrorGlow)" />
-    `;
-  } else if (isCyber) {
-    // Neon noir atmospheric aura - soft color washes, no rectangular signs or floor puddles
-    environmentElements = `
-      <radialGradient id="cyberGlow1" cx="30%" cy="35%" r="50%">
-        <stop offset="0%" stop-color="#ec4899" stop-opacity="0.25" />
-        <stop offset="100%" stop-color="#0a0a1a" stop-opacity="0" />
-      </radialGradient>
-      <radialGradient id="cyberGlow2" cx="70%" cy="40%" r="50%">
-        <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.25" />
-        <stop offset="100%" stop-color="#0a0a1a" stop-opacity="0" />
-      </radialGradient>
-      <rect width="${width}" height="${height}" fill="url(#cyberGlow1)" />
-      <rect width="${width}" height="${height}" fill="url(#cyberGlow2)" />
-    `;
-  } else {
-    // Opulent Ballroom / Lagos Manor - warm golden cinematic ambient spotlight, NO top chandelier or bottom floor line
-    environmentElements = `
-      <radialGradient id="ballroomGlow" cx="50%" cy="38%" r="65%">
-        <stop offset="0%" stop-color="#d97706" stop-opacity="0.28" />
-        <stop offset="50%" stop-color="#78350f" stop-opacity="0.12" />
-        <stop offset="100%" stop-color="#1c1917" stop-opacity="0" />
-      </radialGradient>
-      <rect width="${width}" height="${height}" fill="url(#ballroomGlow)" />
-      <!-- Subtle warm golden bokeh points for ambiance (soft, floating, non-geometric) -->
-      <circle cx="${width * 0.42}" cy="${height * 0.32}" r="14" fill="#fef08a" opacity="0.12" filter="url(#glowFilter)" />
-      <circle cx="${width * 0.58}" cy="${height * 0.36}" r="18" fill="#fef08a" opacity="0.1" filter="url(#glowFilter)" />
-      <circle cx="${width * 0.5}" cy="${height * 0.45}" r="22" fill="#fde047" opacity="0.08" filter="url(#glowFilter)" />
-    `;
+  // 2. HEIST / VAULT / BANK / TUNNEL / SAFE
+  if (
+    heading.includes('vault') ||
+    heading.includes('safe') ||
+    heading.includes('bank') ||
+    heading.includes('tunnel') ||
+    heading.includes('grid') ||
+    heading.includes('heist') ||
+    g.includes('heist')
+  ) {
+    if (ch === 1 || heading.includes('tunnel')) return '/images/scenes/heist_act1.jpg';
+    if (ch === 2 || heading.includes('safe') || heading.includes('vault')) return '/images/scenes/heist_act2.jpg';
+    return '/images/scenes/heist_act3.jpg';
   }
 
-  // --- 2. ACTORS / CHARACTERS (NO GEOMETRIC SHAPES TRYING TO PORTRAY HUMANS) ---
-  // When real user photos are uploaded, we present a clean photographic badge.
-  // We NEVER draw stick figures, trapezoid torsos, or geometric shapes portraying human bodies.
-  let characterFigures = '';
+  // 3. HORROR / CRYPT / ATTIC / CEMETERY
+  if (
+    heading.includes('crypt') ||
+    heading.includes('cemetery') ||
+    heading.includes('grave') ||
+    heading.includes('attic') ||
+    heading.includes('corridor') ||
+    heading.includes('basement') ||
+    heading.includes('horror') ||
+    g.includes('horror')
+  ) {
+    if (ch === 1 || heading.includes('cemetery')) return '/images/scenes/horror_act1.jpg';
+    if (ch === 2 || heading.includes('attic')) return '/images/scenes/horror_act2.jpg';
+    return '/images/scenes/horror_act3.jpg';
+  }
 
-  const safeBeats = Array.isArray(characterBeats) && characterBeats.length > 0
-    ? characterBeats
-    : [];
+  // 4. ROMANCE / COMEDY / BISTRO / CAFE / ROOFTOP
+  if (
+    heading.includes('bistro') ||
+    heading.includes('cafe') ||
+    heading.includes('terrace') ||
+    heading.includes('restaurant') ||
+    heading.includes('rooftop') ||
+    heading.includes('park') ||
+    heading.includes('romcom') ||
+    g.includes('rom') ||
+    g.includes('comedy')
+  ) {
+    if (ch === 1 || heading.includes('bistro')) return '/images/scenes/romcom_act1.jpg';
+    if (ch === 2 || heading.includes('rooftop')) return '/images/scenes/romcom_act2.jpg';
+    return '/images/scenes/romcom_act3.jpg';
+  }
 
-  safeBeats.forEach((char, idx) => {
-    if (!char) return;
-    const photoUrl = customPortraits[char.player.toLowerCase()];
-    if (photoUrl && photoUrl.startsWith('data:image')) {
-      const xPos = width * (0.2 + (idx / Math.max(safeBeats.length - 1, 1)) * 0.6);
-      const yPos = height * 0.45;
-      characterFigures += `
-        <!-- Custom Real Photo Likeness Badge for ${escapeSvg(char.player)} -->
-        <g id="char_photo_${idx}" transform="translate(${xPos - 36}, ${yPos - 36})" filter="url(#dropShadow)">
-          <circle cx="36" cy="36" r="36" fill="#000000" stroke="${accentColor}" stroke-width="3" />
-          <clipPath id="avatarClip_${idx}">
-            <circle cx="36" cy="36" r="34" />
-          </clipPath>
-          <image href="${photoUrl}" x="2" y="2" width="68" height="68" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip_${idx})" />
-        </g>
-      `;
-    }
-  });
+  // 5. DETECTIVE / NOIR / RAIN / DOCKS / ALLEY / OFFICE
+  if (
+    heading.includes('dock') ||
+    heading.includes('harbor') ||
+    heading.includes('alley') ||
+    heading.includes('rain') ||
+    heading.includes('office') ||
+    heading.includes('interrogation') ||
+    heading.includes('crime') ||
+    g.includes('detective') ||
+    g.includes('cyber') ||
+    g.includes('noir')
+  ) {
+    if (ch === 1 || heading.includes('alley') || heading.includes('rain')) return '/images/scenes/detective_act1.jpg';
+    if (ch === 2 || heading.includes('office') || heading.includes('interrogation')) return '/images/scenes/detective_act2.jpg';
+    return '/images/scenes/detective_act3.jpg';
+  }
 
-  // Full SVG Assembly with Halftone pattern & Comic Inks (Pure visual illustration with zero overlapping text)
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
-    <defs>
-      <!-- Atmospheric Wall Gradient -->
-      <linearGradient id="wallGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${wallGrad1}" />
-        <stop offset="100%" stop-color="${wallGrad2}" />
-      </linearGradient>
-
-      <!-- Floor Gradient -->
-      <linearGradient id="floorGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${floorColor}" />
-        <stop offset="100%" stop-color="#000000" />
-      </linearGradient>
-
-      <!-- Glow filter for dramatic lighting -->
-      <filter id="glowFilter" x="-30%" y="-30%" width="160%" height="160%">
-        <feGaussianBlur stdDeviation="8" result="blur" />
-        <feComposite in="SourceGraphic" in2="blur" operator="over" />
-      </filter>
-
-      <!-- Comic Book Deep Ink Drop Shadow -->
-      <filter id="dropShadow" x="-20%" y="-20%" width="140%" height="140%">
-        <feDropShadow dx="3" dy="5" stdDeviation="6" flood-color="#000000" flood-opacity="0.9" />
-      </filter>
-
-      <!-- Halftone Comic Ben-Day Dot Pattern Texture -->
-      <pattern id="benDayDots" x="0" y="0" width="12" height="12" patternUnits="userSpaceOnUse">
-        <circle cx="2.5" cy="2.5" r="1.5" fill="#ffffff" opacity="0.05" />
-      </pattern>
-    </defs>
-
-    <!-- 1. Background Wall Architecture & Ambient Lighting -->
-    <rect width="${width}" height="${height}" fill="url(#wallGrad)" />
-    <!-- Halftone Texture Overlay -->
-    <rect width="${width}" height="${height}" fill="url(#benDayDots)" pointer-events="none" />
-
-    <!-- 2. Scene Heading Architecture & Props -->
-    ${environmentElements}
-
-    <!-- 3. Characters Physically Positioned & Interacting inside the Room -->
-    ${characterFigures}
-
-    <!-- Borderless visual frame -->
-  </svg>`;
-
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  // 6. NOLLYWOOD / DRAMA / LUXURY MANOR / PENTHOUSE / BANQUET
+  if (ch === 1 || heading.includes('hall') || heading.includes('parlour') || heading.includes('banquet')) {
+    return '/images/scenes/nollywood_act1.jpg';
+  }
+  if (ch === 2 || heading.includes('boardroom') || heading.includes('study') || heading.includes('penthouse')) {
+    return '/images/scenes/nollywood_act2.jpg';
+  }
+  return '/images/scenes/nollywood_act3.jpg';
 }
 
 /**
- * Formulate a complete character continuity prompt block for image generation
+ * Generate a dynamic realistic graphic novel scene that directly
+ * resolves the exact SCENE HEADING using photorealistic photography.
+ * Eliminates all geometric shapes!
  */
+export function generateDynamicSceneSvg(
+  sceneHeading: string,
+  genre: string,
+  _characterBeats: CharacterActionBeat[] = [],
+  _aspectRatio: '9:16' | '16:9' = '9:16',
+  speakerOrChapter?: string | number,
+  _line?: string,
+  _direction?: string,
+  _customPhotos?: Record<string, string>,
+  chapterNumber?: number
+): string {
+  const act = typeof speakerOrChapter === 'number'
+    ? speakerOrChapter
+    : (typeof chapterNumber === 'number' ? chapterNumber : 1);
+  return resolveRealisticSceneImage(sceneHeading, genre, act);
+}
+
+/**
+ * Provide a rich default starting chapter with whole-body cast and high-stakes drama
+ * so the TikTok View and Comic Stage open instantly on first click without waiting.
+ */
+export function getDefaultSceneSwapChapter() {
+  return {
+    chapter_number: 1,
+    chapter_title: 'Act 1: The Disputed Will & The Blue Envelope',
+    genre: 'Nollywood Drama',
+    tone: 'Explosive & Theatrical',
+    setting_description:
+      'INT. IKOYI ROYAL PENTHOUSE - NIGHT. High-society mahogany boardroom overlooking Lagos lagoon with crystal decanters and tension thick in the humid air.',
+    audio_cue:
+      'A thunderous clash of distant Lagos storm clouds punctuated by the sharp click of a brass briefcase latch.',
+    is_finale: false,
+    cast: [
+      {
+        player: 'Chief Balogun',
+        role: 'Ruthless Family Patriarch',
+        archetype: 'Dynastic Ruler',
+        motivation: 'Protect the Balogun empire from unraveling at all costs',
+        nationality: 'nigerian',
+      },
+      {
+        player: 'Folake',
+        role: 'Ambitious Eldest Heir',
+        archetype: 'Corporate Strategist',
+        motivation: 'Claim her rightful inheritance before her siblings freeze the assets',
+        nationality: 'nigerian',
+      },
+      {
+        player: 'Barrister Dapo',
+        role: 'Senior Legal Counsel',
+        archetype: 'Conflicted Gatekeeper',
+        motivation: 'Execute the secret codicil while staying alive',
+        nationality: 'nigerian',
+      },
+    ],
+    script_lines: [
+      {
+        speaker: 'Chief Balogun',
+        direction: '[slams his heavy brass walking cane against the mahogany floor, glaring across the table]',
+        line: 'No one leaves this penthouse until I find out who opened the blue envelope!',
+      },
+      {
+        speaker: 'Folake',
+        direction: '[strides forward holding the legal dossier, eyes ablaze with defiance]',
+        line: 'Father, the bank already froze the accounts. The truth will be read tonight, whether you like it or not!',
+      },
+      {
+        speaker: 'Barrister Dapo',
+        direction: '[nervously wipes his forehead with a monogrammed handkerchief, stepping between them]',
+        line: 'Please, both of you! If the press catches wind of this codicil, the entire Balogun conglomerate collapses by morning!',
+      },
+      {
+        speaker: 'Chief Balogun',
+        direction: '[points a trembling, accusatory finger at Dapo, voice dropping to a dangerous whisper]',
+        line: 'You drafted that clause, Dapo. Did you sell my bloodline out to the rival syndicate in Victoria Island?',
+      },
+      {
+        speaker: 'Folake',
+        direction: '[unseals the wax stamped envelope and lays three birth certificates onto the table]',
+        line: 'He did what honor demanded. Now look at the names, Father. Look at who your true heirs really are!',
+      },
+    ],
+    plot_choices: [
+      {
+        id: 'A' as const,
+        label: 'Burn the Blue Envelope',
+        description: 'Chief Balogun hurls the dossier into the fireplace, triggering an all-out physical confrontation.',
+        consequence_hint: 'Leads to armed security intervention and locked doors in Act 2.',
+      },
+      {
+        id: 'B' as const,
+        label: 'Broadcast the DNA Results Live',
+        description: "Folake starts an emergency press conference livestream to force the board's hand.",
+        consequence_hint: 'Public scandal sends stock into freefall with emergency board vote.',
+      },
+      {
+        id: 'C' as const,
+        label: 'Forge an Uneasy Truce',
+        description: 'Barrister Dapo locks the documents inside the vault while they negotiate a secret settlement.',
+        consequence_hint: 'A covert midnight rendezvous at the Lagos Yacht Club.',
+      },
+    ],
+  };
+}
+
 export function buildContinuityPromptBlock(
   bible: CharacterVisualBible,
   activeCast: Array<{ player: string; role: string }>,
@@ -650,8 +602,8 @@ export function buildContinuityPromptBlock(
 The characters in this scene MUST retain their EXACT identical facial identity, hairstyle, locked wardrobe, and signature props as established in Act 1:
 ${characterDescriptions}
 
-=== LIVE-ACTION CINEMATIC SCENE ACTION ===
+=== GRAPHIC NOVEL SCENE ACTION (CHARACTERS IN ACTION) ===
 ${actionDescription}
-IMPORTANT: Characters must be physically staged inside the realistic location, interacting with one another with natural postures and authentic lighting. Do NOT render drawings, cartoons, comic panels, or illustrations. Pure photorealistic feature film still.
+IMPORTANT: Do NOT render characters as separate portrait headshots or UI floating icons. The characters MUST be physically rendered INSIDE the scene illustration itself, interacting with one another and the environment, fully drawn into the environment just like a cinematic graphic novel or comic book panel.
 `.trim();
 }

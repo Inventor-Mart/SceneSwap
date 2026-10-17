@@ -24,6 +24,11 @@ import {
   Minimize2,
   Camera,
   Upload,
+  Layers,
+  Palette,
+  Compass,
+  MapPin,
+  Sparkle,
 } from 'lucide-react';
 import { soundEngine } from '../utils/soundEngine';
 import {
@@ -40,11 +45,16 @@ import {
   generateDynamicSceneSvg,
 } from '../utils/characterConsistency';
 import {
-  getDefaultRealisticSceneImage,
   CastMember,
   ScriptLine,
   PlotChoice,
 } from './CinematicSceneStage';
+import {
+  getSmartSceneBackdrop,
+  getCinematicMoodGrading,
+  getDefaultRealisticSceneImage,
+  SceneBackdropDefinition,
+} from '../utils/sceneVisualEngine';
 
 interface StudioScriptPortraitViewProps {
   genre: string;
@@ -121,12 +131,56 @@ export function StudioScriptPortraitView({
     ...customPlayerPhotos,
   }));
 
-  // Visual Display Mode: 'photorealistic' (cinema backdrop) or 'graphic-novel' (direct visualization)
-  const [visualDisplayMode, setVisualDisplayMode] = useState<'graphic-novel' | 'photorealistic'>('photorealistic');
+  // Visual presentation mode in TikTok View:
+  // 'cinematic' = photorealistic film still with dynamic mood grading & character presence
+  // 'storyboard' = live graphic novel action beats with dynamic comic inking
+  // 'hybrid' = cinematic still composited with graphic novel speech cues & atmospheric wash
+  const [visualPresentationMode, setVisualPresentationMode] = useState<'cinematic' | 'storyboard' | 'hybrid'>('cinematic');
+  const [visualAngleIndex, setVisualAngleIndex] = useState<number>(0);
 
-  // Scene & Character Image State - reliable photographic backdrop matching genre and act
+  // Smart story-aware backdrop definition matching setting keywords, tone, and angle variation
+  const smartBackdrop = useMemo(() => {
+    return getSmartSceneBackdrop({
+      genre,
+      chapterNumber,
+      settingDescription,
+      tone,
+      variationIndex: visualAngleIndex,
+    });
+  }, [genre, chapterNumber, settingDescription, tone, visualAngleIndex]);
+
+  // Current line details
+  const currentItem = safeScriptLines[currentLineIndex] || safeScriptLines[0] || {
+    speaker: safeCast[0]?.player || 'Director',
+    line: 'Action! Roll camera!',
+    direction: '[Cue action]',
+  };
+  const totalLines = safeScriptLines.length;
+  const isLastLine = currentLineIndex >= totalLines - 1;
+
+  const currentSpeakerIdx = currentItem && currentItem.speaker
+    ? safeCast.findIndex((c) => (c.player || '').toLowerCase() === (currentItem.speaker || '').toLowerCase())
+    : 0;
+  const speakerIndexSafe = currentSpeakerIdx >= 0 ? currentSpeakerIdx : 0;
+  const currentStyle = safeColorStyles[speakerIndexSafe % safeColorStyles.length] || safeColorStyles[0];
+  const currentCastMember = safeCast.find(
+    (c) => (c.player || '').toLowerCase() === (currentItem?.speaker || '').toLowerCase()
+  ) || safeCast[0];
+
+  // Dynamic cinematic mood color grading & atmospheric lighting
+  const cinematicGrade = useMemo(() => {
+    return getCinematicMoodGrading({
+      genre,
+      tone,
+      settingDescription,
+      activeDirection: currentItem?.direction,
+      chapterNumber,
+    });
+  }, [genre, tone, settingDescription, currentItem?.direction, chapterNumber]);
+
+  // Scene & Character Image State - initialized to smart story-aware backdrop
   const [sceneImageUrl, setSceneImageUrl] = useState<string>(() => {
-    return getDefaultRealisticSceneImage(genre, chapterNumber);
+    return getSmartSceneBackdrop({ genre, chapterNumber, settingDescription, tone, variationIndex: 0 }).url;
   });
   const [isGeneratingSceneImage, setIsGeneratingSceneImage] = useState<boolean>(false);
   const [characterPortraits, setCharacterPortraits] = useState<Record<string, string>>({});
@@ -165,24 +219,6 @@ export function StudioScriptPortraitView({
     setCharacterPortraits(newPortraits);
   }, [safeCast, genre, localCustomPhotos]);
 
-  // Current line details
-  const currentItem = safeScriptLines[currentLineIndex] || safeScriptLines[0] || {
-    speaker: safeCast[0]?.player || 'Director',
-    line: 'Action! Roll camera!',
-    direction: '[Cue action]',
-  };
-  const totalLines = safeScriptLines.length;
-  const isLastLine = currentLineIndex >= totalLines - 1;
-
-  const currentSpeakerIdx = currentItem && currentItem.speaker
-    ? safeCast.findIndex((c) => (c.player || '').toLowerCase() === (currentItem.speaker || '').toLowerCase())
-    : 0;
-  const speakerIndexSafe = currentSpeakerIdx >= 0 ? currentSpeakerIdx : 0;
-  const currentStyle = safeColorStyles[speakerIndexSafe % safeColorStyles.length] || safeColorStyles[0];
-  const currentCastMember = safeCast.find(
-    (c) => (c.player || '').toLowerCase() === (currentItem?.speaker || '').toLowerCase()
-  ) || safeCast[0];
-
   // Direct Graphic Novel visualization URL in 9:16 portrait format (updates dynamically on each line)
   const graphicNovelVisualUrl = useMemo(() => {
     try {
@@ -201,14 +237,42 @@ export function StudioScriptPortraitView({
       );
     } catch (e) {
       console.warn('Error creating graphic novel visualization:', e);
-      return getDefaultRealisticSceneImage(genre, chapterNumber);
+      return smartBackdrop.url;
     }
-  }, [settingDescription, genre, safeCast, localCustomPhotos, safeScriptLines, currentItem, chapterNumber]);
+  }, [settingDescription, genre, safeCast, localCustomPhotos, safeScriptLines, currentItem, chapterNumber, smartBackdrop.url]);
 
-  // Active displayed image in portrait viewport - always an authentic photorealistic film still
-  const activeDisplayedImage = (sceneImageUrl && !sceneImageUrl.startsWith('data:image/svg'))
-    ? sceneImageUrl
-    : getDefaultRealisticSceneImage(genre, chapterNumber);
+  // Active displayed image in portrait viewport
+  const activeDisplayedImage = useMemo(() => {
+    if (viewSubMode === 'screenplay') {
+      return (sceneImageUrl && !sceneImageUrl.startsWith('data:image/svg'))
+        ? sceneImageUrl
+        : smartBackdrop.url;
+    }
+    if (visualPresentationMode === 'storyboard') {
+      return graphicNovelVisualUrl;
+    }
+    if (sceneImageUrl && !sceneImageUrl.startsWith('data:image/svg')) {
+      return sceneImageUrl;
+    }
+    return smartBackdrop.url;
+  }, [viewSubMode, visualPresentationMode, graphicNovelVisualUrl, sceneImageUrl, smartBackdrop.url]);
+
+  // Cycle camera angle / backdrop variation
+  const handleCycleAngle = () => {
+    const nextIdx = visualAngleIndex + 1;
+    setVisualAngleIndex(nextIdx);
+    const nextBackdrop = getSmartSceneBackdrop({
+      genre,
+      chapterNumber,
+      settingDescription,
+      tone,
+      variationIndex: nextIdx,
+    });
+    setSceneImageUrl(nextBackdrop.url);
+    soundEngine.playDialogueBlip(1.3);
+    setSoundEffectStamp(`📷 ANGLE 0${(nextIdx % 4) + 1}`);
+    setTimeout(() => setSoundEffectStamp(null), 1200);
+  };
 
   // Handle triggering file upload for a specific player
   const triggerUploadFor = (playerName: string) => {
@@ -248,8 +312,8 @@ export function StudioScriptPortraitView({
       const continuityBlock = buildContinuityPromptBlock(visualBible, cast, actionDesc);
       const actionBeats = extractCharacterActionBeats(scriptLines, cast, visualBible);
 
-      // Reliable high-resolution scene photo matching genre and act as instant base
-      const defaultBackdrop = getDefaultRealisticSceneImage(genre, chapterNumber);
+      // Reliable high-resolution scene photo matching setting and angle as instant base
+      const defaultBackdrop = smartBackdrop.url;
       setSceneImageUrl((prev) => (prev && !prev.startsWith('data:image/svg') ? prev : defaultBackdrop));
 
       const res = await fetch('/api/sceneswap/generate-image', {
@@ -262,6 +326,7 @@ export function StudioScriptPortraitView({
           scene_heading: settingDescription,
           chapter_number: chapterNumber,
           chapter_title: chapterTitle,
+          variationIndex: visualAngleIndex,
           type: 'scene',
           aspectRatio: '9:16',
           forceRegenerate: true,
@@ -290,21 +355,28 @@ export function StudioScriptPortraitView({
         const data = await res.json();
         if (data.imageUrl && !data.imageUrl.startsWith('data:image/svg')) {
           setSceneImageUrl(data.imageUrl);
+        } else {
+          setSceneImageUrl(smartBackdrop.url);
         }
+      } else {
+        setSceneImageUrl(smartBackdrop.url);
       }
     } catch (err) {
       console.warn('Failed to generate new realistic scene image:', err);
+      setSceneImageUrl(smartBackdrop.url);
     } finally {
       setIsGeneratingSceneImage(false);
     }
-  }, [genre, tone, settingDescription, chapterNumber, chapterTitle, cast, localCustomPhotos, scriptLines, currentItem, safeCast]);
+  }, [genre, tone, settingDescription, chapterNumber, chapterTitle, cast, localCustomPhotos, scriptLines, currentItem, safeCast, smartBackdrop.url, visualAngleIndex]);
 
   // AUTOMATICALLY generate a new realistic image tailored to the scene for each new scene
   useEffect(() => {
-    setSceneImageUrl(getDefaultRealisticSceneImage(genre, chapterNumber));
+    setVisualAngleIndex(0);
+    const initialUrl = getSmartSceneBackdrop({ genre, chapterNumber, settingDescription, tone, variationIndex: 0 }).url;
+    setSceneImageUrl(initialUrl);
     handleRegenerateScene();
     fetchCharacterPortraits();
-  }, [chapterNumber, chapterTitle, settingDescription, genre]);
+  }, [chapterNumber, chapterTitle, settingDescription, genre, tone]);
 
   // Sound stamp trigger
   const handleTriggerStamp = (type: 'vine' | 'sting' | 'scratch' | 'boing' | 'thunder', label: string) => {
@@ -439,33 +511,54 @@ export function StudioScriptPortraitView({
           ========================================================================= */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none select-none">
         <img
-          src={activeDisplayedImage || getDefaultRealisticSceneImage(genre, chapterNumber)}
+          src={activeDisplayedImage || smartBackdrop.url}
           alt=""
           aria-label={settingDescription}
           referrerPolicy="no-referrer"
           onError={(e) => {
-            const fallback = getDefaultRealisticSceneImage(genre, chapterNumber);
+            const fallback = smartBackdrop.url;
             if ((e.target as HTMLImageElement).src !== fallback) {
               (e.target as HTMLImageElement).src = fallback;
             }
           }}
-          className={`h-full w-full object-cover object-center filter contrast-[1.08] transition-all duration-700 ${
-            viewSubMode === 'screenplay'
-              ? 'brightness-[0.25] blur-sm scale-105'
-              : 'brightness-90 scale-100'
-          }`}
+          style={{
+            filter: viewSubMode === 'screenplay'
+              ? 'brightness(0.25) blur(4px)'
+              : `${cinematicGrade.filterCss} brightness(0.92)`,
+          }}
+          className="h-full w-full object-cover object-center transition-all duration-700 scale-100"
         />
 
-        {/* Subtle Edge Vignette */}
-        <div className="absolute inset-0 ring-1 ring-inset ring-white/10 pointer-events-none" />
+        {/* Dynamic Mood & Lighting Ambient Wash */}
+        <div
+          className="absolute inset-0 pointer-events-none transition-all duration-700"
+          style={{ background: cinematicGrade.ambientTint }}
+        />
+
+        {/* Cinematic Atmospheric Dust / Rain / Spark Overlay */}
+        {cinematicGrade.particleType === 'rain' && (
+          <div className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:16px_32px] animate-pulse" />
+        )}
+        {cinematicGrade.particleType === 'sparks' && (
+          <div className="absolute inset-0 opacity-25 pointer-events-none bg-[radial-gradient(#f97316_1.5px,transparent_1.5px)] [background-size:24px_24px] animate-ping" />
+        )}
+        {cinematicGrade.particleType === 'golden-bokeh' && (
+          <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(#fde047_3px,transparent_3px)] [background-size:48px_48px]" />
+        )}
+        {cinematicGrade.particleType === 'neon' && (
+          <div className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#ec4899_1.5px,transparent_1.5px)] [background-size:20px_20px]" />
+        )}
+
+        {/* Dynamic Cinematic Vignette Ring */}
+        <div className={`absolute inset-0 ring-1 ring-inset ring-white/10 ${cinematicGrade.vignetteIntensity} pointer-events-none transition-all duration-700`} />
       </div>
 
       {/* =========================================================================
           TOP TIKTOK STATUS HEADER BAR
           ========================================================================= */}
-      <div className="relative z-30 flex items-center justify-between p-3 sm:p-4 text-xs">
+      <div className="relative z-30 flex items-center justify-between p-2.5 sm:p-4 text-xs flex-wrap gap-2">
         {/* Left: TikTok Live Script Indicator & Sub-mode Switcher */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Live Indicator - Clean, No Pill Shape */}
           <div className="flex items-center gap-1.5 px-1 py-0.5">
             <span className="relative flex h-2 w-2">
@@ -523,6 +616,48 @@ export function StudioScriptPortraitView({
             </button>
           </div>
 
+          {/* Visual Presentation Mode Switcher (Film Still vs Storyboard vs Hybrid) */}
+          {viewSubMode === 'tiktok' && (
+            <div className="flex rounded-lg bg-black/80 p-0.5 border border-white/15 backdrop-blur-md shadow-inner text-[9px] font-bold">
+              <button
+                type="button"
+                onClick={() => setVisualPresentationMode('cinematic')}
+                className={`px-2 py-0.5 rounded transition ${
+                  visualPresentationMode === 'cinematic'
+                    ? 'bg-amber-400 text-slate-950 font-black shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Photorealistic 35mm Movie Still with Dynamic Mood Grade"
+              >
+                🎬 Film
+              </button>
+              <button
+                type="button"
+                onClick={() => setVisualPresentationMode('storyboard')}
+                className={`px-2 py-0.5 rounded transition ${
+                  visualPresentationMode === 'storyboard'
+                    ? 'bg-purple-500 text-white font-black shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Dynamic Graphic Novel Storyboard"
+              >
+                🎨 Storyboard
+              </button>
+              <button
+                type="button"
+                onClick={() => setVisualPresentationMode('hybrid')}
+                className={`px-2 py-0.5 rounded transition ${
+                  visualPresentationMode === 'hybrid'
+                    ? 'bg-gradient-to-r from-amber-400 to-pink-500 text-slate-950 font-black shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Hybrid Cinema Stage & Comic Cues"
+              >
+                ✨ Hybrid
+              </button>
+            </div>
+          )}
+
           {/* Status indicator when generating new realistic scene */}
           {isGeneratingSceneImage && (
             <div className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-bold border border-amber-400/40 bg-black/80 text-amber-300 shadow animate-pulse backdrop-blur-md">
@@ -532,8 +667,19 @@ export function StudioScriptPortraitView({
           )}
         </div>
 
-        {/* Right: Audio Cue, Mute, Re-render Photo, Fullscreen */}
+        {/* Right: Camera Angle, Audio Cue, Mute, Re-roll Photo, Fullscreen */}
         <div className="flex items-center gap-1.5">
+          {/* Cycle Scene Backdrop / Camera Angle */}
+          <button
+            type="button"
+            onClick={handleCycleAngle}
+            title="Cycle camera angle & alternate scene backdrop for this setting"
+            className="flex items-center gap-1 rounded-lg bg-black/70 px-2 py-1 text-xs text-indigo-300 hover:text-white border border-indigo-500/30 hover:border-indigo-400 backdrop-blur-md transition active:scale-95"
+          >
+            <Compass className="h-3.5 w-3.5 text-indigo-400" />
+            <span className="hidden sm:inline text-[10px] font-bold">Angle 0{((visualAngleIndex % 4) + 1)}</span>
+          </button>
+
           {/* Atmos Cue Button */}
           <button
             type="button"
@@ -735,16 +881,50 @@ export function StudioScriptPortraitView({
         <div className="relative z-20 flex-1 flex flex-col justify-between p-3 sm:p-5 overflow-hidden">
           {/* Top Setting & Chapter Title - Clean Text, No Shape */}
           <div className="pt-1 pb-1 max-w-[85%] z-20 pointer-events-none">
-            <span className="text-[10px] font-mono uppercase font-black tracking-widest text-amber-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] block">
-              ACT {chapterNumber} • {genre.toUpperCase()}
-            </span>
-            <h2 className="text-xs sm:text-sm font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] tracking-tight truncate">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-mono uppercase font-black tracking-widest text-amber-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+                ACT {chapterNumber} • {genre.toUpperCase()}
+              </span>
+              <span className="text-white/40 text-[9px]">•</span>
+              <span className="text-[9px] font-mono text-cyan-300 drop-shadow flex items-center gap-0.5">
+                <MapPin className="h-2.5 w-2.5 inline text-cyan-400" />
+                {smartBackdrop.title}
+              </span>
+              <span className="text-white/40 text-[9px]">•</span>
+              <span className="text-[9px] font-mono text-pink-300 drop-shadow">
+                {cinematicGrade.moodLabel}
+              </span>
+            </div>
+            <h2 className="text-xs sm:text-sm font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] tracking-tight truncate mt-0.5">
               {settingDescription || chapterTitle}
             </h2>
           </div>
 
-          {/* Middle Viewport - Clean and unobstructed view */}
-          <div className="flex-1" />
+          {/* Middle Viewport - Dynamic Speaker Reaction / Stage Atmosphere */}
+          <div className="flex-1 flex items-center justify-end pr-2 pointer-events-none">
+            {/* Active speaker stage presence cutout badge */}
+            {currentCastMember && (
+              <div className="transition-all duration-300 flex flex-col items-center">
+                <div className={`relative h-20 w-20 sm:h-24 sm:w-24 rounded-2xl overflow-hidden border-2 ${currentStyle.border} shadow-[0_10px_25px_rgba(0,0,0,0.8)] bg-black/80 backdrop-blur-md transition-all ${
+                  isSpeakingCurrentLine ? 'ring-4 ring-rose-500/80 scale-105' : ''
+                }`}>
+                  <img
+                    src={
+                      characterPortraits[currentCastMember.player.toLowerCase()] ||
+                      getRealisticCharacterPhoto(currentCastMember.player, currentCastMember.role, genre, localCustomPhotos)
+                    }
+                    alt={currentCastMember.player}
+                    referrerPolicy="no-referrer"
+                    className="h-full w-full object-cover object-top"
+                  />
+                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black via-black/60 to-transparent py-0.5 px-1 text-center">
+                    <p className="text-[8px] font-black text-white truncate">{currentCastMember.player}</p>
+                    <p className={`text-[7px] font-bold ${currentStyle.text} truncate`}>{currentCastMember.role}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Floating Cast Members Drawer if toggled */}
           {showCastDrawer && (

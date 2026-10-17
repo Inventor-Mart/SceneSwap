@@ -22,7 +22,6 @@ import {
   Crown,
   CreditCard,
   Mail,
-  ShieldCheck,
   Send,
   Loader2,
   ExternalLink,
@@ -48,7 +47,6 @@ import { generateClientFallbackChapter } from './utils/chapterGenerator';
 import { AuthModal } from './components/AuthModal';
 import { ServicesLaunchHubModal } from './components/ServicesLaunchHubModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
-import { PWAInstallButton } from './components/PWAInstallButton';
 import { LandingPage } from './components/LandingPage';
 import { SubscriptionModal, type SubscriptionTier } from './components/SubscriptionModal';
 import { AndroidApkModal } from './components/AndroidApkModal';
@@ -286,8 +284,14 @@ export default function App() {
             }
             if (cloudData.selectedGenre) setSelectedGenre(cloudData.selectedGenre);
             if (cloudData.premiseSeed) setWildcardHook(cloudData.premiseSeed);
-            if (cloudData.activeScriptMode) setActiveScriptMode(cloudData.activeScriptMode);
             if (cloudData.isDirectorPro !== undefined) setIsDirectorPro(cloudData.isDirectorPro);
+            if (cloudData.activeScriptMode) {
+              setActiveScriptMode(
+                cloudData.activeScriptMode === 'studio' || cloudData.activeScriptMode === 'portrait'
+                  ? 'studio'
+                  : 'comic'
+              );
+            }
             if (cloudData.activeChapter) setActiveChapter(cloudData.activeChapter);
             setLastSyncedAt(cloudData.updatedAt || new Date().toISOString());
             setCloudNotice('Cloud session restored from your Firebase account');
@@ -825,16 +829,6 @@ export default function App() {
               </button>
             )}
 
-            {/* Services Hub Modal */}
-            <button
-              type="button"
-              onClick={() => setIsServicesModalOpen(true)}
-              title="Services & Infrastructure"
-              className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-slate-400 hover:text-white transition"
-            >
-              <ShieldCheck className="h-3.5 w-3.5" />
-            </button>
-
             {/* Support Desk */}
             <button
               type="button"
@@ -856,9 +850,6 @@ export default function App() {
               <span className="hidden sm:inline">Android APK</span>
               <Download className="h-3 w-3 opacity-75" />
             </button>
-
-            {/* PWA Install Button */}
-            <PWAInstallButton />
           </div>
         </header>
 

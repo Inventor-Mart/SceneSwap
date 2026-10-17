@@ -23,7 +23,8 @@ export function AndroidApkModal({ isOpen, onClose }: AndroidApkModalProps) {
   if (!isOpen) return null;
 
   const apkDownloadUrl =
-    'https://github.com/Inventor-Mart/SceneSwap/releases/download/v1.0.0-apk/SceneSwap-Android7plus-v1.0.apk';
+    'https://github.com/Inventor-Mart/SceneSwap/releases/download/v1.1.0-apk/SceneSwap-Android7plus-v1.1.0.apk';
+  const projectArchiveUrl = '/sceneswap-android-project.tar.gz';
 
   const handleDownloadClick = () => {
     soundEngine.playDialogueBlip(1.2);
@@ -48,7 +49,7 @@ export function AndroidApkModal({ isOpen, onClose }: AndroidApkModalProps) {
                   SceneSwap for Android
                 </h2>
                 <span className="rounded-md border border-emerald-400/40 bg-emerald-500/20 px-2 py-0.5 text-[9px] font-black uppercase text-emerald-300">
-                  Android 7.0+
+                  v1.1.0 • Android 7.0+
                 </span>
               </div>
               <p className="text-xs text-emerald-300 font-medium">
@@ -68,6 +69,13 @@ export function AndroidApkModal({ isOpen, onClose }: AndroidApkModalProps) {
 
         {/* Device Compatibility Specs Card */}
         <div className="rounded-2xl border border-white/10 bg-black/40 p-3.5 space-y-2.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-400 flex items-center gap-1.5">
+              <Layers className="h-3.5 w-3.5 text-emerald-400" />
+              Build Version
+            </span>
+            <span className="font-extrabold text-emerald-300">v1.1.0 (Latest 18-Scene Visuals & Live Paystack)</span>
+          </div>
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-400 flex items-center gap-1.5">
               <Layers className="h-3.5 w-3.5 text-emerald-400" />
@@ -95,16 +103,14 @@ export function AndroidApkModal({ isOpen, onClose }: AndroidApkModalProps) {
         <div className="space-y-3">
           {/* Option 1: Direct APK Download */}
           <div className="rounded-2xl border border-emerald-500/40 bg-emerald-950/20 p-4 space-y-3">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-1.5 font-black text-sm text-white">
-                  <Download className="h-4 w-4 text-emerald-400" />
-                  <span>Download Standalone APK</span>
-                </div>
-                <p className="text-xs text-slate-300 mt-1">
-                  Direct installer package compiled with <code className="text-emerald-300">minSdkVersion = 24</code>. Compatible with all Android smartphones and tablets running Android 7.0 and up.
-                </p>
+            <div>
+              <div className="flex items-center gap-1.5 font-black text-sm text-white">
+                <Download className="h-4 w-4 text-emerald-400" />
+                <span>Download Standalone APK (v1.1.0)</span>
               </div>
+              <p className="text-xs text-slate-300 mt-1">
+                Direct installer package compiled with <code className="text-emerald-300">minSdkVersion = 24</code>. Includes the 18 smart scene backdrops, multi-angle camera cycler, and live Paystack gateway.
+              </p>
             </div>
 
             <a
@@ -115,8 +121,19 @@ export function AndroidApkModal({ isOpen, onClose }: AndroidApkModalProps) {
               className="flex items-center justify-center gap-2 w-full rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 py-3 text-xs font-black text-slate-950 hover:brightness-110 transition shadow-lg active:scale-95 cursor-pointer"
             >
               <Download className="h-4 w-4" />
-              <span>Download SceneSwap-Android7plus-v1.0.apk</span>
+              <span>Download SceneSwap-Android7plus-v1.1.0.apk</span>
             </a>
+
+            <div className="pt-1">
+              <a
+                href={projectArchiveUrl}
+                download="sceneswap-android-project.tar.gz"
+                className="flex items-center justify-center gap-2 w-full rounded-xl border border-emerald-500/30 bg-emerald-950/40 py-2 text-xs font-bold text-emerald-300 hover:bg-emerald-900/40 transition active:scale-95 cursor-pointer"
+              >
+                <Layers className="h-3.5 w-3.5 text-emerald-400" />
+                <span>Download Android Studio Project Archive (.tar.gz)</span>
+              </a>
+            </div>
           </div>
 
           {/* Option 2: Instant PWA Native Install */}
@@ -126,9 +143,9 @@ export function AndroidApkModal({ isOpen, onClose }: AndroidApkModalProps) {
                 <Globe className="h-4 w-4" />
               </div>
               <div>
-                <p className="text-xs font-bold text-white">Alternative: Instant Web Install (PWA)</p>
+                <p className="text-xs font-bold text-white">Alternative: Instant Web App</p>
                 <p className="text-[11px] text-slate-400">
-                  Tap Chrome menu (⋮) → <strong className="text-white">Install App</strong> for instant offline play without downloading files.
+                  Open in Chrome on Android → Tap (⋮) → <strong className="text-white">Add to Home Screen</strong> for full offline capability without installing files.
                 </p>
               </div>
             </div>

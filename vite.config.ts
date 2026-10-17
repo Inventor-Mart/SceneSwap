@@ -8,13 +8,10 @@ import { generateSceneSwap, generateSceneSwapChapter, generateSceneSwapRealistic
 import { sendSupportEmail, sendReceiptEmail, sendTestEmail, getResendStatus, setRuntimeResendApiKey } from './src/server/email.ts';
 import { initializePaystackTransaction, verifyPaystackTransaction, getPaystackStatus, setRuntimePaystackKeys } from './src/server/paystack.ts';
 
-function apiServerPlugin(): Plugin {
-  return {
-    name: 'api-server-endpoints',
-    configureServer(server) {
-      const app = express();
-      app.use(express.json());
-      app.use(express.static(path.resolve(process.cwd(), 'public')));
+function createApiApp() {
+  const app = express();
+  app.use(express.json());
+  app.use(express.static(path.resolve(process.cwd(), 'public')));
 
       app.post('/api/sceneswap', async (req, res) => {
         try {
@@ -128,7 +125,18 @@ function apiServerPlugin(): Plugin {
           res.status(500).json({ error: err?.message || 'Failed to verify Paystack payment' });
         }
       });
+      return app;
+}
 
+function apiServerPlugin(): Plugin {
+  return {
+    name: 'api-server-endpoints',
+    configureServer(server) {
+      const app = createApiApp();
+      server.middlewares.use(app);
+    },
+    configurePreviewServer(server) {
+      const app = createApiApp();
       server.middlewares.use(app);
     },
   };
