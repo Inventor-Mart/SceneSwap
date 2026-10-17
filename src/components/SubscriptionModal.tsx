@@ -122,7 +122,7 @@ export function SubscriptionModal({
     }
 
     setIsProcessing(true);
-    setCheckoutMessage('Connecting to Paystack secure checkout...');
+    setCheckoutMessage('Initializing Paystack secure checkout...');
 
     const amount =
       currency === 'NGN' ? pricing[tier].kobo : pricing[tier].cents;
@@ -135,6 +135,7 @@ export function SubscriptionModal({
           email: userEmail,
           amount,
           currency,
+          callback_url: typeof window !== 'undefined' ? `${window.location.origin}/?payment_tier=${tier}` : undefined,
           metadata: {
             tier,
             billingCycle,
@@ -145,35 +146,95 @@ export function SubscriptionModal({
 
       const data = await res.json();
 
+      if (!data?.status || !data?.data) {
+        setIsProcessing(false);
+        setCheckoutMessage(
+          data?.message || 'Payment initialization could not be completed. Please try again.'
+        );
+        setTimeout(() => setCheckoutMessage(null), 4500);
+        return;
+      }
+
+      // 1. Try Paystack Inline Popup (modal stays on screen, zero redirects)
+      const paystackPubKey =
+        (import.meta as any).env?.VITE_PAYSTACK_PUBLIC_KEY ||
+        'pk_live_287be14c6e94e43d9b380bb17915340bb55cf8ac';
+
+      if (
+        typeof window !== 'undefined' &&
+        (window as any).PaystackPop &&
+        data.data.reference &&
+        !data.data.authorization_url?.includes('simulate')
+      ) {
+        try {
+          const handler = (window as any).PaystackPop.setup({
+            key: paystackPubKey,
+            email: userEmail,
+            amount,
+            currency,
+            ref: data.data.reference,
+            callback: async function (response: { reference: string }) {
+              setIsProcessing(true);
+              setCheckoutMessage('Verifying payment with Paystack...');
+              try {
+                const verifyRes = await fetch('/api/paystack/verify', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ reference: response.reference }),
+                });
+                const verifyData = await verifyRes.json();
+                if (verifyData?.status && verifyData?.data?.status === 'success') {
+                  soundEngine.playApplause();
+                  onActivateTier(tier);
+                  setCheckoutMessage('🎉 Payment verified! VIP subscription activated!');
+                  setTimeout(() => {
+                    setIsProcessing(false);
+                    setCheckoutMessage(null);
+                    onClose();
+                  }, 1200);
+                } else {
+                  setIsProcessing(false);
+                  setCheckoutMessage('Payment verification unconfirmed. VIP Pass was not activated.');
+                  setTimeout(() => setCheckoutMessage(null), 4500);
+                }
+              } catch {
+                setIsProcessing(false);
+                setCheckoutMessage('Network error verifying payment with server.');
+                setTimeout(() => setCheckoutMessage(null), 4000);
+              }
+            },
+            onClose: function () {
+              setIsProcessing(false);
+              setCheckoutMessage('Payment was cancelled. Subscription was not activated.');
+              setTimeout(() => setCheckoutMessage(null), 3000);
+            },
+          });
+
+          handler.openIframe();
+          setCheckoutMessage(null);
+          setIsProcessing(false);
+          return;
+        } catch (inlineErr) {
+          console.warn('Paystack inline modal error, falling back to redirect:', inlineErr);
+        }
+      }
+
+      // 2. Redirect fallback for full-page Paystack checkout
       if (data?.data?.authorization_url && !data.data.authorization_url.includes('simulate')) {
-        // Real Paystack Live/Test link
         window.location.href = data.data.authorization_url;
       } else {
-        // Simulated / instant local unlock
-        setTimeout(() => {
-          soundEngine.playApplause();
-          onActivateTier(tier);
-          setIsProcessing(false);
-          setCheckoutMessage(null);
-          onClose();
-        }, 900);
+        // If simulation or keys not configured on server, inform user - NEVER activate free pass!
+        setIsProcessing(false);
+        setCheckoutMessage(
+          'Live Paystack keys required for real subscription checkout. VIP Pass was not activated.'
+        );
+        setTimeout(() => setCheckoutMessage(null), 5000);
       }
     } catch {
-      // Fallback instant activation
-      setTimeout(() => {
-        soundEngine.playApplause();
-        onActivateTier(tier);
-        setIsProcessing(false);
-        setCheckoutMessage(null);
-        onClose();
-      }, 700);
+      setIsProcessing(false);
+      setCheckoutMessage('Unable to reach payment gateway. Subscription was not activated.');
+      setTimeout(() => setCheckoutMessage(null), 4000);
     }
-  }
-
-  function handleInstantDemoUnlock() {
-    soundEngine.playApplause();
-    onActivateTier('vip_director');
-    onClose();
   }
 
   return (
@@ -321,7 +382,7 @@ export function SubscriptionModal({
               }}
               className="mt-4 w-full rounded-xl border border-white/15 bg-white/5 py-2 text-xs font-bold text-slate-300 hover:text-white hover:bg-white/10 transition"
             >
-              Keep Free
+              {isDirectorPro ? 'Downgrade to Free Host' : 'Keep Free'}
             </button>
           </div>
 

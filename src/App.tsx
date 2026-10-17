@@ -306,6 +306,44 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Handle Paystack Redirect Callback (verifies real payment before activating VIP)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const reference = urlParams.get('reference') || urlParams.get('trxref');
+    const paymentTier = (urlParams.get('payment_tier') as SubscriptionTier) || 'vip_director';
+
+    if (reference) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+      setCloudNotice('Verifying payment transaction with Paystack...');
+      fetch('/api/paystack/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reference }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.status && data?.data?.status === 'success') {
+            const confirmedTier = (data?.data?.metadata?.tier as SubscriptionTier) || paymentTier;
+            handleActivateTier(confirmedTier);
+            setCloudNotice(
+              `🎉 Payment verified! ${confirmedTier === 'creator_studio' ? 'Creator Studio Pro' : 'VIP Director Pass'} is active!`
+            );
+          } else {
+            setCloudNotice('Payment verification unconfirmed. VIP Pass was not activated.');
+          }
+        })
+        .catch((err) => {
+          console.error('Payment verification error:', err);
+          setCloudNotice('Unable to verify payment with Paystack server.');
+        })
+        .finally(() => {
+          setTimeout(() => setCloudNotice(null), 5000);
+        });
+    }
+  }, []);
+
   // Save to Cloud & LocalStorage
   const syncToCloud = async () => {
     if (!currentUser) return;
